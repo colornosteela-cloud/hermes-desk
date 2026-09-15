@@ -282,7 +282,7 @@
     if (title) title.textContent = bot && bot.name ? `${bot.name} — Working Memory` : "Working Memory";
     const kicker = document.querySelector(".wm-kicker");
     if (kicker) {
-      const kind = bot && bot.kind === "grok-build" ? "BUILD" : "TEELA";
+      const kind = bot && bot.kind === "hermes" ? "BUILD" : "TEELA";
       kicker.textContent = `🧠 ${kind} — WORKING MEMORY`;
     }
     const meta = $("wm-head-meta");

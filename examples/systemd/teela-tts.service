@@ -1,5 +1,5 @@
 [Unit]
-Description=Teela TTS (Chatterbox-Turbo / Jade) for Grok Desk
+Description=Teela TTS (Chatterbox-Turbo / Jade) for Hermes Desk
 After=network-online.target
 Wants=network-online.target
 

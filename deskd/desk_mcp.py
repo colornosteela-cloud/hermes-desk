@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP: bots list / message / create — Grok Bot style teammates, isolated desks."""
+"""MCP: bots list / message / create — Hermes Bot style teammates, isolated desks."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ import urllib.parse
 import urllib.request
 
 BOT = ""
-BASE = os.environ.get("GROK_DESK_URL", "http://127.0.0.1:8742")
-TOKEN = os.environ.get("GROK_DESK_TOKEN", "")
+BASE = os.environ.get("HERMES_DESK_URL", "http://127.0.0.1:8742")
+TOKEN = os.environ.get("HERMES_DESK_TOKEN", "")
 
 
 def _http(method: str, path: str, body: dict | None = None) -> dict:
@@ -63,7 +63,7 @@ TOOLS = [
     },
     {
         "name": "create_teammate",
-        "description": "Create a new named helper bot on THIS computer with its own SOUL and workspace. Default kind is grok-build. Only one teela-brain is allowed per computer — do not create a second Teela Brain.",
+        "description": "Create a new named helper bot on THIS computer with its own SOUL and workspace. Default kind is hermes. Only one teela-brain is allowed per computer — do not create a second Teela Brain.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -72,7 +72,7 @@ TOOLS = [
                 "soul": {"type": "string"},
                 "kind": {
                     "type": "string",
-                    "description": "grok-build (default, full Grok Build tools). teela-brain is rejected if one already exists.",
+                    "description": "hermes (default, full Hermes Agent tools). teela-brain is rejected if one already exists.",
                 },
             },
             "required": ["name", "description"],
@@ -194,7 +194,7 @@ def main() -> None:
                         "name": args.get("name"),
                         "description": args.get("description"),
                         "soul": args.get("soul") or "",
-                        "kind": args.get("kind") or "grok-build",
+                        "kind": args.get("kind") or "hermes",
                     },
                 )
                 text = json.dumps(res)

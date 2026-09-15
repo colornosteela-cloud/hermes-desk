@@ -27,7 +27,7 @@ class PeerRoster(BaseHTTPRequestHandler):
         return
 
     def do_GET(self):  # noqa: N802
-        if (self.headers.get("X-Grok-Cluster-Token") or "") != self.token:
+        if (self.headers.get("X-Hermes-Cluster-Token") or "") != self.token:
             self.send_response(401)
             self.end_headers()
             return
@@ -150,7 +150,7 @@ class RosterMergeTests(unittest.TestCase):
         self.assertEqual(data.get("node"), "teela-brain")
 
     def test_cluster_get_bots_is_local_only(self) -> None:
-        st, data = self._json("GET", "/v1/bots", headers={"X-Grok-Cluster-Token": "mesh-secret"})
+        st, data = self._json("GET", "/v1/bots", headers={"X-Hermes-Cluster-Token": "mesh-secret"})
         self.assertEqual(st, 200)
         ids = [b["id"] for b in data.get("bots") or []]
         self.assertNotIn("b_peerbot00001", ids)
@@ -158,7 +158,7 @@ class RosterMergeTests(unittest.TestCase):
             self.assertNotIn("messages", b)
 
     def test_cluster_bots_route_local(self) -> None:
-        st, data = self._json("GET", "/v1/cluster/bots", headers={"X-Grok-Cluster-Token": "mesh-secret"})
+        st, data = self._json("GET", "/v1/cluster/bots", headers={"X-Hermes-Cluster-Token": "mesh-secret"})
         self.assertEqual(st, 200)
         self.assertEqual(data.get("node"), "teela-brain")
         ids = [b["id"] for b in data.get("bots") or []]

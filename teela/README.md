@@ -1,10 +1,10 @@
 # Teela local GPU runtime (teela-brain)
 
-Scripts that launch vLLM on this host's GPUs (NVIDIA CUDA, AMD ROCm, or Intel Arc XPU). After a reimage, copy this folder to `~/teela` (or set `GROK_DESK_TEELA` to this path).
+Scripts that launch vLLM on this host's GPUs (NVIDIA CUDA, AMD ROCm, or Intel Arc XPU). After a reimage, copy this folder to `~/teela` (or set `HERMES_DESK_TEELA` to this path).
 
 ```bash
 cp -a teela ~/teela
-# or: export GROK_DESK_TEELA=$HOME/grok-desk/teela
+# or: export HERMES_DESK_TEELA=$HOME/hermes-desk/teela
 ~/teela/start.sh qwen     # auto: CUDA / ROCm / Intel; 8GB → VL-8B, 16GB+ → 27B GPTQ
 ~/teela/status.sh
 ~/teela/stop.sh

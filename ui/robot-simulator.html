@@ -1629,7 +1629,7 @@ function applyPose(name, source, overlay, motionHint){
   if(name === "wave"){
     const hint = String(motionHint||"");
     const fromUser = source === "UI" || source === "demo";
-    const fromAgent = (source === "agent" || source === "grok-desk") && hint !== "idle";
+    const fromAgent = (source === "agent" || source === "hermes-desk") && hint !== "idle";
     if((fromUser || fromAgent) && source !== "hydrate" && source !== "status"){
       return startWaveRight(source);
     }
@@ -2048,8 +2048,8 @@ function command(msg){
   const incomingWave = String(msg.pose||"") === "wave" || msg.motion === "waving";
   const isStatus = cmd === "status" || cmd === "state";
   // teela_v2: setGesture sets waving=false. Status polls and persist echoes must not restart it.
-  // Chat "wave" is cmd=pose from grok-desk — that is a real request, not an echo.
-  const freshAgentWave = incomingWave && (src === "grok-desk" || src === "agent") && cmd === "pose" && String(msg.motion||"waving") !== "idle";
+  // Chat "wave" is cmd=pose from hermes-desk — that is a real request, not an echo.
+  const freshAgentWave = incomingWave && (src === "hermes-desk" || src === "agent") && cmd === "pose" && String(msg.motion||"waving") !== "idle";
   if(incomingWave && src !== "UI" && src !== "demo" && !freshAgentWave){
     if(hydrate || isStatus){
       return {ok:true, ignored:"stale-wave", status:status()};

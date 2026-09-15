@@ -1,4 +1,4 @@
-"""Bounded Grok Build one-shot for Teela: system info and read-only commands."""
+"""Bounded Hermes Agent one-shot for Teela: system info and read-only commands."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def redact(text: str) -> str:
 def build_prompt(task: str, command: str | None) -> str:
     if command:
         return (
-            "Use Grok Build's shell tool to run this exact command. "
+            "Use Hermes Agent's shell tool to run this exact command. "
             "Return only the command stdout. Do not modify files, do not run anything else, "
             "and do not print secrets.\n"
             f"Command: {command}"
@@ -80,16 +80,16 @@ def build_prompt(task: str, command: str | None) -> str:
     return (task or "").strip()
 
 
-def run_grok_build(
+def run_agent_oneshot(
     *,
     task: str = "",
     command: str | None = None,
     cwd: str | None = None,
     timeout: float = 90,
-    grok_bin: str | None = None,
+    agent_bin: str | None = None,
     runner: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
-    """One-shot `grok --single`: read-only probes, or a coding task with no command."""
+    """One-shot `hermes --single`: read-only probes, or a coding task with no command."""
     cmd = " ".join((command or "").split()) or None
     if cmd and not command_is_safe(cmd):
         return {"ok": False, "error": "command is not an allowed read-only probe"}
@@ -97,19 +97,19 @@ def run_grok_build(
         prompt = build_prompt(task, cmd)
     else:
         prompt = (
-            "Use Grok Build coding tools (shell, files, grep, search_replace, skills, MCP) as needed.\n"
+            "Use Hermes Agent coding tools (shell, files, grep, search_replace, skills, MCP) as needed.\n"
             + (task or "").strip()
         )
     if not prompt.strip():
         return {"ok": False, "error": "task or command required"}
-    binary = grok_bin or os.environ.get("GROK_BIN") or str(Path.home() / ".grok/bin/grok")
+    binary = agent_bin or os.environ.get("HERMES_BIN") or str(Path.home() / ".hermes/bin/hermes")
     if not Path(binary).is_file() and runner is None:
-        return {"ok": False, "error": f"Grok Build CLI not found at {binary}"}
+        return {"ok": False, "error": f"Hermes Agent CLI not found at {binary}"}
     argv = [binary]
     if cwd:
         argv += ["--cwd", str(cwd)]
     sock_root = Path(cwd) if cwd else Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp")
-    sock = sock_root / f"grok-build-{os.getpid()}.sock"
+    sock = sock_root / f"hermes-{os.getpid()}.sock"
     argv += [
         "--leader-socket",
         str(sock),
@@ -132,9 +132,9 @@ def run_grok_build(
             cwd=str(cwd) if cwd else None,
         )
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "Grok Build timed out", "via": "grok-build"}
+        return {"ok": False, "error": "Hermes Agent timed out", "via": "hermes"}
     except Exception as e:
-        return {"ok": False, "error": str(e), "via": "grok-build"}
+        return {"ok": False, "error": str(e), "via": "hermes"}
     stdout = redact((getattr(proc, "stdout", None) or "").strip())
     stderr = redact((getattr(proc, "stderr", None) or "").strip())
     code = int(getattr(proc, "returncode", 1) or 0)
@@ -143,7 +143,7 @@ def run_grok_build(
         "ok": code == 0 and bool(output),
         "output": output[:8000],
         "command": cmd,
-        "via": "grok-build",
+        "via": "hermes",
         "returncode": code,
-        "error": "" if code == 0 else (stderr or stdout or "grok-build failed")[:500],
+        "error": "" if code == 0 else (stderr or stdout or "hermes failed")[:500],
     }

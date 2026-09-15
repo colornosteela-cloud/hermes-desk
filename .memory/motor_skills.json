@@ -1,0 +1,16 @@
+{
+  "skills": {
+    "pose": {
+      "skill": "pose",
+      "procedure": [],
+      "corrections": [],
+      "learned_parameters": {
+        "neck_pan_settle_ms": 4
+      },
+      "proposed_procedure": null,
+      "validated": true,
+      "last_validated": "2026-09-15T22:13:01Z",
+      "last_success_episode": "sme_381531"
+    }
+  }
+}

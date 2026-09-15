@@ -1,4 +1,4 @@
-# Grok Desk MiniOS 0.10.1-rc5
+# Hermes Desk MiniOS 0.10.1-rc5
 
 This corrective release restores the **0.9.1-rc3 frontend behavior** and applies the requested UI changes as cosmetic/layout changes instead of replacing the frontend structure.
 
@@ -10,11 +10,11 @@ Chatting from a phone on the LAN could leave the page frozen (no new messages un
 - SSE connections have a 20s write timeout: a fully stalled pipe self-heals instead of hanging forever.
 - Verified live: a stalled client (tiny receive buffer, not reading) was disconnected by the server mid-burst while a healthy client kept receiving all events.
 
-## Grok Build bots keep their conversation across restarts
+## Hermes Agent bots keep their conversation across restarts
 
-A Grok Build bot used to start a brand-new Grok Build session every time its ACP agent process was (re)started — after every crash, deskd restart, model change, or chat operation — so the bot re-read the whole workspace context for every question. Grok Build already persists every session under `~/.grok/bots/<id>/grok-home/sessions/`; deskd now uses that:
+A Hermes Agent bot used to start a brand-new Hermes Agent session every time its ACP agent process was (re)started — after every crash, deskd restart, model change, or chat operation — so the bot re-read the whole workspace context for every question. Hermes Agent already persists every session under `~/.hermes/bots/<id>/hermes-home/sessions/`; deskd now uses that:
 
-- The live ACP session ID is recorded in `grok-home/last_acp_session.json` (keyed to the active chat) and bound to the chat row as `grokSession`.
+- The live ACP session ID is recorded in `hermes-home/last_acp_session.json` (keyed to the active chat) and bound to the chat row as `agentSession`.
 - When the agent process restarts (crash respawn, deskd restart, `ensure()`), deskd sends ACP `session/load` for the recorded session and only falls back to `session/new` when no session is recorded or the load fails. A null `session/load` result counts as success.
 - Opening an older chat resumes that chat's bound session when one exists.
 - Intentional fresh starts (new chat, clear chat, delete last chat, identity or model change, rewind fallback) still create new sessions.
@@ -22,36 +22,36 @@ A Grok Build bot used to start a brand-new Grok Build session every time its ACP
 
 Verified end to end: a codeword given to the System bot was still answered correctly after the ACP child process was killed and respawned mid-conversation.
 
-## Chrome DevTools MCP on Grok Build (Teela ACP fallback only)
+## Chrome DevTools MCP on Hermes Agent (Teela ACP fallback only)
 
-Host MCP servers from `~/.grok/config.toml` (Chrome DevTools) are now inherited by MiniOS bots:
+Host MCP servers from `~/.hermes/config.toml` (Chrome DevTools) are now inherited by MiniOS bots:
 
-- **Grok Build** bots get them in the child `GROK_HOME` config and on every ACP `session/new`, including bots created later.
+- **Hermes Agent** bots get them in the child `HERMES_DESK_HOME` config and on every ACP `session/new`, including bots created later.
 - **Teela Brain** gets them on the ACP fallback session only. The MiniOS llama.cpp body/desktop loop is unchanged and still uses `bot_browser` / desktop tools.
 
 ## Robot Simulator is Teela-only
 
-Grok Build bots do not load the Robot Simulator and cannot drive the body (`403` on `robot` / virtual-body actions). Their MiniOS dock shows App Preview instead. Teela Brain still gets the simulator, and there is still only one Teela Brain per host.
+Hermes Agent bots do not load the Robot Simulator and cannot drive the body (`403` on `robot` / virtual-body actions). Their MiniOS dock shows App Preview instead. Teela Brain still gets the simulator, and there is still only one Teela Brain per host.
 
 ## Chat UI: todos, progress, effort, and paste
 
-- Todo lists and a live progress line render in chat; Grok Build shows a reasoning-effort chip.
+- Todo lists and a live progress line render in chat; Hermes Agent shows a reasoning-effort chip.
 - Local tok/s uses per-token stream timing instead of ACP burst snapshots.
 - User bubbles keep pasted newlines (`white-space: pre-wrap`). Restarted assistant snapshots no longer duplicate the essay.
 
 ## Fixes: long ACP turns and login after sleep
 
 - **ACP `session/prompt` timeout** is idle silence, not a 10-minute wall clock. Tokens, tools, thoughts, and local prefill ticks keep a coding turn alive. A dead local engine still fails in ~12s; a hung turn with no events still times out after 10 minutes of silence.
-- **Host `grok login` is shared**, not copied. Child ACP/TUI processes symlink `~/.grok/auth.json` (and its lock) and set `GROK_AUTH_PATH`. Byte-copying forked the OIDC refresh token: the first bot that refreshed revoked every other copy, which cleared credentials and forced `/login` after sleep.
+- **Host `hermes login` is shared**, not copied. Child ACP/TUI processes symlink `~/.hermes/auth.json` (and its lock) and set `GROK_AUTH_PATH`. Byte-copying forked the OIDC refresh token: the first bot that refreshed revoked every other copy, which cleared credentials and forced `/login` after sleep.
 
 ## Autostart on reboot (teela-brain)
 
-Grok Desk is a **user systemd unit** (`contrib/grok-desk.service` → `~/.config/systemd/user/grok-desk.service`). On teela-brain it is **enabled** with `Restart=always`, starts after `teela-qwen38-27b.service` (Qwen 3.8 27B on `:8081`), and comes up at boot when lingering is on for that user (`loginctl enable-linger`).
+Hermes Desk is a **user systemd unit** (`contrib/hermes-desk.service` → `~/.config/systemd/user/hermes-desk.service`). On teela-brain it is **enabled** with `Restart=always`, starts after `teela-qwen38-27b.service` (Qwen 3.8 27B on `:8081`), and comes up at boot when lingering is on for that user (`loginctl enable-linger`).
 
 ```bash
-systemctl --user enable --now grok-desk.service
+systemctl --user enable --now hermes-desk.service
 loginctl enable-linger "$USER"
-systemctl --user status grok-desk.service
+systemctl --user status hermes-desk.service
 ```
 
 `./start.sh` is still valid for a one-shot foreground/detach run; if the unit is already active it will report the existing pid and exit. Manual `python3 deskd/deskd.py` is not required after a reboot.
@@ -72,21 +72,21 @@ User remarks about a recent attempt (“that wasn’t right”, “much better�
 
 ## Semantic MiniOS Desktop Driver retained
 
-The semantic driver from RC4 is retained as an additive backend/agent feature without replacing the RC3 UI. Grok can use `desktop_state`, stable object/app/window IDs, semantic window/app/file/browser/build actions, and `desktop_click_object`; raw cursor actions remain available for unfamiliar interfaces.
+The semantic driver from RC4 is retained as an additive backend/agent feature without replacing the RC3 UI. Hermes can use `desktop_state`, stable object/app/window IDs, semantic window/app/file/browser/build actions, and `desktop_click_object`; raw cursor actions remain available for unfamiliar interfaces.
 
-The bot profile tells Grok to use `desktop_state` first and not to reverse-engineer Grok Desk source code just to operate its own MiniOS.
+The bot profile tells Hermes to use `desktop_state` first and not to reverse-engineer Hermes Desk source code just to operate its own MiniOS.
 
 ## Validation
 
 - 76/76 Python tests pass, including 5 RC5 regression tests specifically checking RC3 frontend compatibility plus the semantic driver.
 - Python compilation passes.
 - `node --check ui/app.js` passes.
-- `node --check ui/grokbot-ui.js` passes.
+- `node --check ui/hermesbot-ui.js` passes.
 - ZIP integrity is checked during packaging.
 
 ---
 
-# Grok Desk MiniOS 0.9.1-rc3
+# Hermes Desk MiniOS 0.9.1-rc3
 
 This release candidate improves the bot-controlled MiniOS pointer and keeps the persistent visual-awareness work from 0.9.0-rc2.
 
@@ -97,7 +97,7 @@ This release candidate improves the bot-controlled MiniOS pointer and keeps the 
 - `desktop_move_cursor` visibly points anywhere on the MiniOS using normalized 0-1000 desktop coordinates.
 - `desktop_click` performs a real left-click at the pointed location.
 - `desktop_double_click` was added for files/icons and browser content.
-- Browser clicks now go directly through Grok Desk's Chromium input queue (`mouseMoved` -> `mousePressed` -> `mouseReleased`) instead of relying on synthetic DOM pointer capture.
+- Browser clicks now go directly through Hermes Desk's Chromium input queue (`mouseMoved` -> `mousePressed` -> `mouseReleased`) instead of relying on synthetic DOM pointer capture.
 - Click feedback is a short ring around the cursor hotspot; the arrow itself stays visually stable.
 
 ## Persistent MiniOS vision retained
@@ -108,47 +108,47 @@ Each bot owns a headless MiniOS mirror and can use `desktop_observe` / `desktop_
 
 `observe -> point/move cursor -> click -> watch screen change -> verify -> continue`
 
-This works alongside Grok Build's native file/bash tools: native tools remain the efficient path for coding, while the cursor is used when visual interaction or verification matters.
+This works alongside Hermes Agent's native file/bash tools: native tools remain the efficient path for coding, while the cursor is used when visual interaction or verification matters.
 
 ## Validation
 
 - 71/71 Python tests pass.
 - Python compilation passes for daemon, MCP helpers, and tests.
 - `node --check ui/app.js` passes.
-- `node --check ui/grokbot-ui.js` passes.
+- `node --check ui/hermesbot-ui.js` passes.
 
 ---
 
 ## Previous 0.9.0-rc2 notes
 
-This release candidate adds **persistent MiniOS visual awareness** while keeping Grok Build as the agent runtime through ACP.
+This release candidate adds **persistent MiniOS visual awareness** while keeping Hermes Agent as the agent runtime through ACP.
 
 ## New: persistent visual MiniOS mirror
 
-Each bot now owns a second, headless Chromium surface dedicated to rendering its Grok Desk MiniOS continuously. It loads Grok Desk in observer mode (`?observe=<bot_id>`), follows that bot's active MiniOS surface, and maintains an actual JPEG screencast of the rendered desktop.
+Each bot now owns a second, headless Chromium surface dedicated to rendering its Hermes Desk MiniOS continuously. It loads Hermes Desk in observer mode (`?observe=<bot_id>`), follows that bot's active MiniOS surface, and maintains an actual JPEG screencast of the rendered desktop.
 
-New Grok Build MiniOS tools:
+New Hermes Agent MiniOS tools:
 
 - `desktop_observe` — returns current MiniOS semantic state **and the actual JPEG screen frame**.
 - `desktop_watch` — waits for a newer MiniOS frame after an action and returns the changed frame.
 
-The agent profile now instructs Grok to visually verify rendered UI work before claiming it is correct. This makes the intended loop:
+The agent profile now instructs Hermes to visually verify rendered UI work before claiming it is correct. This makes the intended loop:
 
 `build/edit -> open in MiniOS -> observe/watch -> visually verify -> report in chat`
 
-The normal Grok Desk UI shows a **Visual awareness** status in the live desktop header when the bot mirror is ready.
+The normal Hermes Desk UI shows a **Visual awareness** status in the live desktop header when the bot mirror is ready.
 
 ## Existing MiniOS developer features retained
 
-- Real per-bot Linux workspace shared with Grok Build.
+- Real per-bot Linux workspace shared with Hermes Agent.
 - Files and Code Editor.
-- Terminal PTY and Grok Build TUI.
+- Terminal PTY and Hermes Agent TUI.
 - Build & Test Center.
 - Managed long-running app process.
 - Sandboxed App Preview.
 - Per-bot Chromium browser.
 - Virtual bot cursor and keyboard control.
-- Chat-vs-workspace behavior handled by the Grok Build agent rather than a second AI router.
+- Chat-vs-workspace behavior handled by the Hermes Agent agent rather than a second AI router.
 
 ## Security retained
 
@@ -163,8 +163,8 @@ The normal Grok Desk UI shows a **Visual awareness** status in the live desktop 
 - `python3 -m unittest discover -s tests -v` — **69 tests passed**.
 - `python3 -m py_compile deskd/*.py` — passed.
 - `node --check ui/app.js` — passed.
-- `node --check ui/grokbot-ui.js` — passed.
+- `node --check ui/hermesbot-ui.js` — passed.
 
-A live observer Chromium process successfully launched and produced JPEG frames in the packaging environment. That environment applies a Chromium enterprise policy that blocks loopback/private-address navigation, so the final observer page could not reach the local Grok Desk HTTP server there. On a normal Ubuntu Grok Build host, the observer uses `http://127.0.0.1:<desk-port>/` and does not require Internet access.
+A live observer Chromium process successfully launched and produced JPEG frames in the packaging environment. That environment applies a Chromium enterprise policy that blocks loopback/private-address navigation, so the final observer page could not reach the local Hermes Desk HTTP server there. On a normal Ubuntu Hermes Agent host, the observer uses `http://127.0.0.1:<desk-port>/` and does not require Internet access.
 
-The packaging environment also does not include an authenticated Grok Build CLI session, so run the Hello World acceptance test on the target Grok Build machine.
+The packaging environment also does not include an authenticated Hermes Agent CLI session, so run the Hello World acceptance test on the target Hermes Agent machine.

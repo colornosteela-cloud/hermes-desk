@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 # Brain llama.cpp stays loopback-only. Body reaches it at 127.0.0.1:8081.
-# Cloud Grok stays the default; switch Body Bot to qwen38-27b-q5 if xAI is down.
+# Cloud Hermes stays the default; switch Body Bot to qwen38-27b-q5 if xAI is down.
 ExecStart=/usr/bin/ssh -N -L 127.0.0.1:8081:127.0.0.1:8081 roni@10.0.0.10 -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new
 Restart=always
 RestartSec=5

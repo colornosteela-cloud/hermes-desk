@@ -275,7 +275,7 @@ class Cluster:
             name = re.sub(r"[^A-Za-z0-9._-]", "-", name)[:64] or socket.gethostname()
         token = normalize_cluster_token(data.get("cluster_token") or "")
         raw_peers = data.get("peers") if isinstance(data.get("peers"), list) else []
-        if os.environ.get("GROK_DESK_CLUSTER") == "0":
+        if os.environ.get("HERMES_DESK_CLUSTER") == "0":
             raw_peers = []
         listen_host, listen_port, access = self.listen_tuple()
         built: list[Peer] = []
@@ -491,7 +491,7 @@ class Cluster:
         host, port = self._peer_host_port(peer)
         raw = None if body is None else json.dumps(body).encode()
         hdrs = {
-            "X-Grok-Cluster-Token": self.token,
+            "X-Hermes-Cluster-Token": self.token,
             "Accept": "application/json",
             "Connection": "close",
         }
@@ -846,7 +846,7 @@ class Cluster:
         target = _strip_token_query(handler.path)
         n = int(handler.headers.get("Content-Length") or "0")
         hdrs = {
-            "X-Grok-Cluster-Token": self.token,
+            "X-Hermes-Cluster-Token": self.token,
             "Accept": handler.headers.get("Accept") or "*/*",
             "Connection": "close",
         }
@@ -961,7 +961,7 @@ class Cluster:
                 "GET",
                 "/v1/cluster/events",
                 headers={
-                    "X-Grok-Cluster-Token": self.token,
+                    "X-Hermes-Cluster-Token": self.token,
                     "Accept": "text/event-stream",
                     "Connection": "close",
                     "Cache-Control": "no-cache",

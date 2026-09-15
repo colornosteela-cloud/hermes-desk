@@ -20,12 +20,12 @@ class ContextPayloadTests(unittest.TestCase):
     def test_meta_total_tokens_is_live_window(self) -> None:
         n, src = t.context_tokens_from_payload({"totalTokens": 21502, "streamStartMs": 1, "chunkId": "c1"})
         self.assertEqual(n, 21502)
-        self.assertEqual(src, "grok_runtime")
+        self.assertEqual(src, "agent_runtime")
 
     def test_explicit_context_tokens_used(self) -> None:
         n, src = t.context_tokens_from_payload({"contextTokensUsed": 79854, "contextWindowTokens": 500000})
         self.assertEqual(n, 79854)
-        self.assertEqual(src, "grok_runtime")
+        self.assertEqual(src, "agent_runtime")
 
     def test_multi_call_ledger_is_not_current_context(self) -> None:
         n, src = t.context_tokens_from_payload(
@@ -115,7 +115,7 @@ class GenerationSpeedTests(unittest.TestCase):
     def test_first_to_last_chunk_excludes_ttft(self) -> None:
         m = t.generation_metrics(
             output_tokens=742,
-            token_source="grok_runtime",
+            token_source="agent_runtime",
             first_out_ms=1000,
             last_out_ms=1000 + 9405,
             stream_start_ms=387,
@@ -144,7 +144,7 @@ class GenerationSpeedTests(unittest.TestCase):
         # Meter should be time after first token, not the whole wait and not the 229ms dump.
         m = t.generation_metrics(
             output_tokens=40,
-            token_source="grok_runtime",
+            token_source="agent_runtime",
             first_out_ms=32000,
             last_out_ms=32229,
             stream_start_ms=0,
@@ -187,7 +187,7 @@ class GenerationSpeedTests(unittest.TestCase):
         # reject short dump bursts, not sustained fast streams.
         m = t.generation_metrics(
             output_tokens=400,
-            token_source="grok_runtime",
+            token_source="agent_runtime",
             first_out_ms=1000,
             last_out_ms=3000,
             stream_start_ms=0,
@@ -200,7 +200,7 @@ class GenerationSpeedTests(unittest.TestCase):
     def test_short_dump_burst_still_falls_back(self) -> None:
         m = t.generation_metrics(
             output_tokens=3000,
-            token_source="grok_runtime",
+            token_source="agent_runtime",
             first_out_ms=9000,
             last_out_ms=9100,
             stream_start_ms=0,
@@ -244,7 +244,7 @@ class LocalStreamSpeedTests(unittest.TestCase):
     def test_visible_output_subtracts_reasoning(self) -> None:
         n, src = t.visible_output_tokens({"output_tokens": 49, "reasoning_tokens": 35})
         self.assertEqual(n, 14)
-        self.assertEqual(src, "grok_runtime")
+        self.assertEqual(src, "agent_runtime")
 
     def test_local_tokenizer_is_not_char_div_four(self) -> None:
         text = "Hi. What would you like to work on?"
@@ -349,7 +349,7 @@ class BotIngestTests(unittest.TestCase):
         self.assertGreater(self.bot.tps, 0)
         self.assertEqual(self.bot.speed_source, "stream_measurement")
         snap = self.bot.telemetry_snapshot()
-        self.assertIn(snap["token_source"], ("tokenizer", "grok_runtime"))
+        self.assertIn(snap["token_source"], ("tokenizer", "agent_runtime"))
         self.assertAlmostEqual(snap["ttft_ms"], 158.0)
 
 
@@ -357,7 +357,7 @@ class _SeedFakeBot:
     """Minimal stand-in so _seed_usage_from_disk can run against a temp tree."""
 
     def __init__(self, home: Path, sid: str | None) -> None:
-        self.grok_home = home
+        self.agent_home = home
         self.acp = type("Acp", (), {"session_id": sid})()
         self.context_used = 0
         self.context_window = 500000
@@ -376,15 +376,26 @@ class _SeedFakeBot:
 
 class SeedUsageTests(unittest.TestCase):
     def _write_signals(self, home: Path, sid: str, used: int, mtime: float) -> Path:
-        d = home / "sessions" / "%2Fcwd" / sid
-        d.mkdir(parents=True, exist_ok=True)
-        p = d / "signals.json"
-        p.write_text(
-            json.dumps({"contextTokensUsed": used, "contextWindowTokens": 500000}),
-            encoding="utf-8",
+        import sqlite3
+
+        # Hermes persists turns to <HERMES_HOME>/state.db (sessions rows carry
+        # token counts); the seed reads that table.
+        db = home / "state.db"
+        con = sqlite3.connect(db)
+        con.execute(
+            "create table if not exists sessions ("
+            "id text primary key, last_activity_at real, input_tokens integer, "
+            "output_tokens integer, cache_read_tokens integer, cache_write_tokens integer,"
+            " reasoning_tokens integer, model text)"
         )
-        os.utime(p, (mtime, mtime))
-        return p
+        con.execute(
+            "insert or replace into sessions (id, last_activity_at, input_tokens) "
+            "values (?,?,?)",
+            (sid, mtime, used),
+        )
+        con.commit()
+        con.close()
+        return db
 
     def test_fresh_session_falls_back_to_newest_runtime_value(self) -> None:
         import deskd as d
@@ -392,11 +403,10 @@ class SeedUsageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             home = Path(td)
             self._write_signals(home, "old-sid", 48275, 1000.0)
-            (home / "sessions" / "%2Fcwd" / "new-sid").mkdir(parents=True)
             fake = _SeedFakeBot(home, "new-sid")
             d.Bot._seed_usage_from_disk(fake)
             self.assertEqual(fake.context_used, 48275)
-            self.assertEqual(fake.context_source, "grok_runtime")
+            self.assertEqual(fake.context_source, "agent_runtime")
             self.assertEqual(fake.emitted, [48275])
 
     def test_sid_match_wins_over_newer_foreign_session(self) -> None:
@@ -408,6 +418,7 @@ class SeedUsageTests(unittest.TestCase):
             self._write_signals(home, "sid-b", 48275, 1000.0)
             fake = _SeedFakeBot(home, "sid-b")
             d.Bot._seed_usage_from_disk(fake)
+            # sid-b match wins over the newer foreign sid-a.
             self.assertEqual(fake.context_used, 48275)
 
     def test_no_sid_still_seeds_from_newest(self) -> None:
@@ -425,36 +436,21 @@ class SeedUsageTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             home = Path(td)
-            (home / "sessions").mkdir(parents=True)
             fake = _SeedFakeBot(home, "new-sid")
             d.Bot._seed_usage_from_disk(fake)
             self.assertEqual(fake.context_used, 0)
             self.assertEqual(fake.emitted, [])
 
-    def test_updates_jsonl_fallback_when_no_signals(self) -> None:
+    def test_tokenless_newest_session_keeps_zero(self) -> None:
         import deskd as d
 
         with tempfile.TemporaryDirectory() as td:
             home = Path(td)
-            ddir = home / "sessions" / "%2Fcwd" / "old-sid"
-            ddir.mkdir(parents=True)
-            line = json.dumps(
-                {
-                    "method": "session/update",
-                    "params": {
-                        "_meta": {
-                            "totalTokens": 26518,
-                            "streamStartMs": 1,
-                            "chunkId": "c1",
-                        }
-                    },
-                }
-            )
-            (ddir / "updates.jsonl").write_text(line + "\n", encoding="utf-8")
+            self._write_signals(home, "old-sid", 0, 1000.0)  # zero-token session
             fake = _SeedFakeBot(home, "new-sid")
             d.Bot._seed_usage_from_disk(fake)
-            self.assertEqual(fake.context_used, 26518)
-            self.assertEqual(fake.context_source, "grok_runtime")
+            self.assertEqual(fake.context_used, 0)
+            self.assertEqual(fake.emitted, [])
 
 
 class MeterRetentionTests(unittest.TestCase):
@@ -464,7 +460,7 @@ class MeterRetentionTests(unittest.TestCase):
 
     def test_reset_keeps_last_speed_and_context(self) -> None:
         self.bot.context_used = 33734
-        self.bot.context_source = "grok_runtime"
+        self.bot.context_source = "agent_runtime"
         self.bot.tps = 42.0
         self.bot.speed_source = "local_stream"
         self.bot.token_source = "tokenizer"

@@ -181,7 +181,7 @@ class LanAutoListenTests(unittest.TestCase):
                 "peers": [{"name": "teela-body", "url": "http://10.0.0.118:8742"}],
             }
         )
-        with patch.dict(os.environ, {"GROK_DESK_LOOPBACK": "1"}):
+        with patch.dict(os.environ, {"HERMES_DESK_LOOPBACK": "1"}):
             self.assertEqual(d.bind_address("127.0.0.1"), "127.0.0.1")
             self.assertEqual(d.desired_listen_host("127.0.0.1"), "127.0.0.1")
             self.assertFalse(d.lan_mode())
@@ -314,7 +314,7 @@ class StreamMergeTests(unittest.TestCase):
     def test_leading_newline_snapshot_does_not_duplicate(self) -> None:
         head = (
             "Here's the honest, system-specific breakdown — what each one actually buys you "
-            "on grok-desk, and where the real value (and risk) is.\n"
+            "on hermes-desk, and where the real value (and risk) is.\n"
         )
         truncated = head + "Chrome DevTools — adopt now.\nthen copy the good ones into the"
         full = truncated + " skills directory and watch. Telescope first."
@@ -326,7 +326,7 @@ class StreamMergeTests(unittest.TestCase):
     def test_restarted_essay_collapses_to_the_complete_copy(self) -> None:
         head = (
             "Here's the honest, system-specific breakdown — what each one actually buys you "
-            "on grok-desk, and where the real value (and risk) is.\n"
+            "on hermes-desk, and where the real value (and risk) is.\n"
         )
         first = head + "Chrome DevTools — adopt now.\nthen copy the good ones into the"
         second = head + (
@@ -413,13 +413,13 @@ class AvatarPersistTests(unittest.TestCase):
             {
                 "id": "b_build",
                 "name": "Coder",
-                "kind": "grok-build",
+                "kind": "hermes",
                 "model": "grok-4.6",
                 "models": [{"id": "grok-4.6"}, {"id": "qwen38-flash-next"}],
                 "permission_mode": "always-approve",
             }
         )
-        self.assertEqual(row["kind"], "grok-build")
+        self.assertEqual(row["kind"], "hermes")
         self.assertEqual(row["model"], "grok-4.6")
         self.assertEqual(row["permission_mode"], "always-approve")
         self.assertEqual(len(row["models"]), 2)
@@ -428,13 +428,13 @@ class AvatarPersistTests(unittest.TestCase):
 class AuthShareTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
-        self.home = Path(self.tmp.name) / ".grok"
+        self.home = Path(self.tmp.name) / ".hermes"
         self.home.mkdir()
-        self._orig = d.USER_GROK_HOME
-        d.USER_GROK_HOME = self.home
+        self._orig = d.USER_AGENT_HOME
+        d.USER_AGENT_HOME = self.home
 
     def tearDown(self) -> None:
-        d.USER_GROK_HOME = self._orig
+        d.USER_AGENT_HOME = self._orig
         self.tmp.cleanup()
 
     def test_copy_auth_symlinks_host_file(self) -> None:
@@ -464,25 +464,27 @@ class AuthShareTests(unittest.TestCase):
         self.assertTrue(lock.is_symlink())
         self.assertEqual(lock.resolve(), (self.home / "auth.json.lock").resolve())
 
-    def test_apply_shared_grok_auth_sets_path(self) -> None:
-        env: dict[str, str] = {}
-        d.apply_shared_grok_auth(env)
-        self.assertEqual(env["GROK_AUTH_PATH"], str(self.home / "auth.json"))
+    def test_apply_shared_agent_auth_is_noop(self) -> None:
+        # Auth is shared by symlinking the host auth.json into the bot's
+        # HERMES_HOME (see copy_auth); no env override is needed anymore.
+        env: dict[str, str] = {"PATH": "keep"}
+        d.apply_shared_agent_auth(env)
+        self.assertEqual(env, {"PATH": "keep"})
 
     def test_acp_and_tui_use_shared_auth(self) -> None:
         src = Path(d.__file__).read_text(encoding="utf-8")
         start = src.split("def _start_locked", 1)[1].split("def ", 1)[0]
         tui = src.split("def ensure_tui", 1)[1].split("def ", 1)[0]
-        self.assertIn("apply_shared_grok_auth(env)", start)
-        self.assertIn("apply_shared_grok_auth(env)", tui)
-        self.assertNotIn('shutil.copy2(auth, tui_home / "auth.json")', tui)
+        self.assertIn('env["HERMES_HOME"] = str(self.bot.agent_home)', start)
+        self.assertIn('env["HERMES_HOME"] = str(self.agent_home)', tui)
+        self.assertNotIn("copy2", tui)
 
 
 class GrokBinTests(unittest.TestCase):
     def test_resolve_prefers_existing_path(self) -> None:
-        from surfaces import resolve_grok_bin
+        from surfaces import resolve_agent_bin
 
-        found = resolve_grok_bin()
+        found = resolve_agent_bin()
         self.assertTrue(found)
         if Path(found).is_file():
             self.assertTrue(os.access(found, os.X_OK))

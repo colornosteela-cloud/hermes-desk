@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP: list / register / start / stop local models for Grok Build bots."""
+"""MCP: list / register / start / stop local models for Hermes Agent bots."""
 from __future__ import annotations
 
 import json
@@ -9,8 +9,8 @@ import urllib.error
 import urllib.request
 
 BOT = ""
-BASE = os.environ.get("GROK_DESK_URL", "http://127.0.0.1:8742")
-TOKEN = os.environ.get("GROK_DESK_TOKEN", "")
+BASE = os.environ.get("HERMES_DESK_URL", "http://127.0.0.1:8742")
+TOKEN = os.environ.get("HERMES_DESK_TOKEN", "")
 
 
 def _http(method: str, path: str, body: dict | None = None, timeout: int = 60) -> dict:

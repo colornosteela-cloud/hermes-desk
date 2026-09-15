@@ -8,9 +8,9 @@ class RC5RegressionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.index = (ROOT / "ui" / "index.html").read_text()
-        cls.css = (ROOT / "ui" / "grokbot.css").read_text()
+        cls.css = (ROOT / "ui" / "hermesbot.css").read_text()
         cls.app = (ROOT / "ui" / "app.js").read_text()
-        cls.ui = (ROOT / "ui" / "grokbot-ui.js").read_text()
+        cls.ui = (ROOT / "ui" / "hermesbot-ui.js").read_text()
         cls.mcp = (ROOT / "deskd" / "desktop_mcp.py").read_text()
         cls.deskd = (ROOT / "deskd" / "deskd.py").read_text()
 
@@ -60,7 +60,7 @@ class RC5RegressionTests(unittest.TestCase):
             self.assertIn(name, self.mcp)
         self.assertIn("screen_objects", self.deskd)
         self.assertIn("recommended_next_actions", self.deskd)
-        self.assertNotIn("Never inspect Grok Desk source code", self.deskd)
+        self.assertNotIn("Never inspect Hermes Desk source code", self.deskd)
 
     def test_semantic_actions_are_cherry_picked_into_existing_rc3_frontend(self):
         self.assertIn("function applyDesktopAction", self.app)

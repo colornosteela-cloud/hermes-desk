@@ -754,17 +754,17 @@ class LocalModelSummarizer:
         model: str | None = None,
         timeout: float = 45.0,
     ) -> None:
-        # Renamed from GROK_DESK_VLLM_*; legacy names still honored.
+        # Renamed from HERMES_DESK_VLLM_*; legacy names still honored.
         self.upstream = (
             upstream
-            or os.environ.get("GROK_DESK_FAST")
-            or os.environ.get("GROK_DESK_VLLM_FAST")
+            or os.environ.get("HERMES_DESK_FAST")
+            or os.environ.get("HERMES_DESK_VLLM_FAST")
             or "http://127.0.0.1:8001"
         ).rstrip("/")
         self.model = (
             model
-            or os.environ.get("GROK_DESK_FAST_MODEL")
-            or os.environ.get("GROK_DESK_VLLM_FAST_MODEL")
+            or os.environ.get("HERMES_DESK_FAST_MODEL")
+            or os.environ.get("HERMES_DESK_VLLM_FAST_MODEL")
             or "qwen3-vl-8b"
         )
         self.timeout = timeout

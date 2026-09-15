@@ -127,7 +127,7 @@ def snapshot_self_model(
             ),
             CapabilityFact(
                 "software.grok_build",
-                "Use grok-build to run system info and host commands on this computer",
+                "Use hermes to run system info and host commands on this computer",
                 True,
                 0.9,
                 "software",

@@ -428,9 +428,9 @@ class SafetyAndGroundingGates(unittest.TestCase):
         self.assertIn("joke", (line or "").lower())
 
     def test_unsafe_grok_command_is_denied(self):
-        import teela_grok_bridge as gb
+        import teela_agent_bridge as gb
 
-        out = gb.run_grok_build(command="rm -rf /")
+        out = gb.run_agent_oneshot(command="rm -rf /")
         self.assertFalse(out["ok"])
 
 

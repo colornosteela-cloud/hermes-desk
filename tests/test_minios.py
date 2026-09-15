@@ -120,7 +120,7 @@ class MiniOSWorkspaceTests(unittest.TestCase):
     def test_prefill_progress_is_tui_line_not_thought(self) -> None:
         class _FakeBot:
             id = "b_gb"
-            kind = "grok-build"
+            kind = "hermes"
             status = "Ready"
             surface = "chat"
             control = "agent_controlled"
@@ -924,7 +924,7 @@ class MiniOSFrontendTests(unittest.TestCase):
         cls.app = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
         cls.index = (ROOT / "ui" / "index.html").read_text(encoding="utf-8")
         cls.css = (ROOT / "ui" / "styles.css").read_text(encoding="utf-8")
-        cls.grokbot_css = (ROOT / "ui" / "grokbot.css").read_text(encoding="utf-8")
+        cls.hermesbot_css = (ROOT / "ui" / "hermesbot.css").read_text(encoding="utf-8")
         cls.desktop_mcp = (ROOT / "deskd" / "desktop_mcp.py").read_text(encoding="utf-8")
         cls.deskd = (ROOT / "deskd" / "deskd.py").read_text(encoding="utf-8")
 
@@ -995,7 +995,7 @@ class MiniOSFrontendTests(unittest.TestCase):
         self.assertIn('class="desktop-window app-window maximized-window focused-window" data-window-app="preview"', self.index)
         self.assertIn('data-window-app="preview" data-surface="preview" data-open="true"', self.index)
         self.assertIn('class="dock-app dock-btn running active" data-desktop-app="preview"', self.index)
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertIn("function showRobotOnAgentDesktop", ui)
         self.assertIn("showRobotOnAgentDesktop()", ui)
         self.assertIn('ensureMaximizedDesktopWindow(win)', ui.split("function showRobotOnAgentDesktop", 1)[1].split("function ", 1)[0])
@@ -1011,20 +1011,20 @@ class MiniOSFrontendTests(unittest.TestCase):
         self.assertIn("continuous proprioception", self.deskd)
         self.assertIn("function postRobotCommand", self.app)
         self.assertIn("robot-command", self.app)
-        self.assertIn('...msg, source: "grok-desk", type: "robot-command"', self.app)
+        self.assertIn('...msg, source: "hermes-desk", type: "robot-command"', self.app)
         robot_branch = self.app.split('if (msg.action === "robot")', 1)[1].split("if (msg.action ===", 1)[0]
         self.assertNotIn("moveCursorToElement", robot_branch)
         self.assertNotIn("ensureMaximized", robot_branch)
         self.assertNotIn("openWindow", robot_branch)
         post_robot = self.app.split("function postRobotCommand", 1)[1].split("function ", 1)[0]
         self.assertNotIn("openWindow", post_robot)
-        dock_css = self.grokbot_css.split(".ubuntu-dock {", 1)[1].split("}", 1)[0]
+        dock_css = self.hermesbot_css.split(".ubuntu-dock {", 1)[1].split("}", 1)[0]
         self.assertIn("z-index:7", dock_css)
-        self.assertIn("pointer-events:none;\n  z-index:10;", self.grokbot_css)
-        self.assertNotIn("inset:0 !important", self.grokbot_css.split(".desktop-fullscreen-overlay .app-window.maximized-window", 1)[1].split("}", 1)[0])
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        self.assertIn("pointer-events:none;\n  z-index:10;", self.hermesbot_css)
+        self.assertNotIn("inset:0 !important", self.hermesbot_css.split(".desktop-fullscreen-overlay .app-window.maximized-window", 1)[1].split("}", 1)[0])
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertIn("if (desktopZCounter > 80) desktopZCounter = 31", ui)
-        self.assertNotIn('type: "robot-command", source: "grok-desk", ...msg', self.app)
+        self.assertNotIn('type: "robot-command", source: "hermes-desk", ...msg', self.app)
         self.assertIn('tool("robot_status"', self.desktop_mcp)
         self.assertIn("commanded/live/delta", self.desktop_mcp)
         self.assertIn("temp/load/fall_flag stay null", self.desktop_mcp)
@@ -1069,7 +1069,7 @@ class MiniOSFrontendTests(unittest.TestCase):
         self.assertIn('if (menu && !menu.hidden) placeModelMenu();', self.app)
         self.assertGreaterEqual(self.app.count("if (menu && !menu.hidden) placeModelMenu();"), 3)
         self.assertIn('e.key !== "Escape"', self.app)
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertIn('getElementById("model-menu")?.setAttribute("hidden"', ui)
         self.assertIn("function isLocalGpuModel", self.app)
         self.assertIn("function mergePickerModels", self.app)
@@ -1082,13 +1082,13 @@ class MiniOSFrontendTests(unittest.TestCase):
         self.assertIn("isLocalOccupying(m, list)", self.app)
         self.assertIn("Switch both GPUs to this model", self.app)
         self.assertIn("function localEngineReady", self.app)
-        self.assertIn("function localTeelaBrainTaken", self.grokbot_ui if hasattr(self, "grokbot_ui") else (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8"))
+        self.assertIn("function localTeelaBrainTaken", self.hermesbot_ui if hasattr(self, "hermesbot_ui") else (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8"))
         self.assertIn("Only one Teela Brain per computer", self.index)
-        self.assertIn("card.hidden = Boolean(taken && isTeela && !editing)", (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8"))
+        self.assertIn("card.hidden = Boolean(taken && isTeela && !editing)", (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8"))
         self.assertIn("teela_brain_taken", self.deskd)
         self.assertIn("def ensure_single_teela_brain", self.deskd)
         self.assertIn("Local model will start, then this message sends", self.app)
-        self.assertIn('local === "wave" && (localSrc === "UI" || localSrc === "grok-desk")', self.app)
+        self.assertIn('local === "wave" && (localSrc === "UI" || localSrc === "hermes-desk")', self.app)
         self.assertIn("suppressWaveEchoUntil", self.app)
         self.assertIn("superseded by a later robot command", self.app)
         self.assertIn("leftWaveLocally", self.app)
@@ -1217,7 +1217,7 @@ class MiniOSFrontendTests(unittest.TestCase):
 
     def test_workspace_sharing_ui_and_tools_exist(self) -> None:
         self.assertIn('id="workspace-share-block"', self.index)
-        self.assertIn("fillWorkspaceShareList", (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8"))
+        self.assertIn("fillWorkspaceShareList", (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8"))
         mcp = (ROOT / "deskd" / "desk_mcp.py").read_text(encoding="utf-8")
         self.assertIn("list_shared_desks", mcp)
         self.assertIn("read_shared_file", mcp)
@@ -1245,34 +1245,34 @@ class MiniOSFrontendTests(unittest.TestCase):
         self.assertIn("function planEntriesFromUpdate", self.app)
         self.assertIn('kind === "plan"', self.app)
         self.assertIn("Long Horizon Task", self.index)
-        self.assertIn(".horizon-item.is-done", self.grokbot_css)
+        self.assertIn(".horizon-item.is-done", self.hermesbot_css)
         self.assertIn("function applySessionTurn", self.app)
 
     def test_compact_header_has_plugins_and_settings_icons(self) -> None:
         self.assertIn('id="menu-plugins"', self.index)
         self.assertIn('id="menu-settings"', self.index)
         self.assertIn('id="more-btn"', self.index)
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertIn('$("menu-settings")?.addEventListener("click", openUserSettings)', ui)
         self.assertIn('$("menu-plugins")?.addEventListener("click", openPlugins)', ui)
         self.assertIn("function syncMoreMenu", self.app)
 
     def test_chat_fills_space_when_sidebars_collapse(self) -> None:
-        self.assertIn("--left-w: 0px !important", self.grokbot_css)
-        self.assertIn("--right-w: 0px !important", self.grokbot_css)
-        self.assertIn("--left-resizer: 0px", self.grokbot_css)
-        self.assertIn("--right-resizer: 0px", self.grokbot_css)
-        self.assertIn("minmax(0, 1fr)", self.grokbot_css)
-        self.assertIn("--right-col: 50%", self.grokbot_css)
-        self.assertIn("--right-col: 0px !important", self.grokbot_css)
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        self.assertIn("--left-w: 0px !important", self.hermesbot_css)
+        self.assertIn("--right-w: 0px !important", self.hermesbot_css)
+        self.assertIn("--left-resizer: 0px", self.hermesbot_css)
+        self.assertIn("--right-resizer: 0px", self.hermesbot_css)
+        self.assertIn("minmax(0, 1fr)", self.hermesbot_css)
+        self.assertIn("--right-col: 50%", self.hermesbot_css)
+        self.assertIn("--right-col: 0px !important", self.hermesbot_css)
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertIn("COLLAPSE_DRAG_PX", ui)
-        self.assertIn('RIGHT_SPLIT_KEY = "grok-desk-right-split"', ui)
+        self.assertIn('RIGHT_SPLIT_KEY = "hermes-desk-right-split"', ui)
         self.assertIn("function rightPaneMax", ui)
         self.assertIn("allowCollapse", ui)
 
     def test_half_window_splits_chat_and_agent_desktop(self) -> None:
-        css = self.grokbot_css
+        css = self.hermesbot_css
         self.assertIn("--compact-rail-w: 68px", css)
         self.assertIn("--compact-split-w: min(50vw, calc((100% - var(--compact-rail-w)) / 2))", css)
         self.assertIn("right: var(--compact-split-w) !important", css)
@@ -1280,13 +1280,13 @@ class MiniOSFrontendTests(unittest.TestCase):
         self.assertIn("inset: 0 0 0 var(--compact-rail-w) !important", css)
         self.assertNotIn("min(360px, 38vw)", css)
         self.assertNotIn("Very tight half-screens", css)
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertNotIn("window.innerWidth < 900", ui)
         self.assertIn('if (lastLayoutMode !== "compact")', ui)
         self.assertIn("closeCompactDrawers", ui)
 
     def test_live_desktop_expands_to_half_screen(self) -> None:
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertIn("LIVE_DESKTOP_RATIO = 0.5", ui)
         self.assertIn("total * LIVE_DESKTOP_RATIO", ui)
         self.assertIn('min(${width}px, 50%)', ui)
@@ -1295,31 +1295,31 @@ class MiniOSFrontendTests(unittest.TestCase):
         self.assertIn("--desktop-res-w", ui)
         self.assertIn("dataset.resolution", ui)
         self.assertIn("availH", ui)
-        self.assertIn("@media (max-height: 700px)", self.grokbot_css)
+        self.assertIn("@media (max-height: 700px)", self.hermesbot_css)
         self.assertIn("preLiveRightW", ui)
         self.assertIn("AGENT DESKTOP", self.index)
         self.assertNotIn("LIVE DESKTOP", self.index)
         self.assertNotIn("desktop-reconnect", self.index)
         self.assertNotIn("desktop-status-text", self.index)
-        self.assertIn("body.live-desktop-entered .ubuntu-desktop-area", self.grokbot_css)
-        self.assertIn("body.live-desktop-entered .desktop-fullscreen-overlay", self.grokbot_css)
+        self.assertIn("body.live-desktop-entered .ubuntu-desktop-area", self.hermesbot_css)
+        self.assertIn("body.live-desktop-entered .desktop-fullscreen-overlay", self.hermesbot_css)
 
     def test_workspace_desktop_uses_dock_not_wallpaper_icons(self) -> None:
         self.assertNotIn('class="desktop-icon"', self.index)
         self.assertIn('id="dock"', self.index)
         self.assertIn('class="dock-app', self.index)
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertIn("function wireDockMagnify", ui)
         self.assertIn("function wireDockSnap", ui)
-        self.assertIn("dock-left", self.grokbot_css)
-        self.assertIn("data-dock-hot", self.grokbot_css)
-        self.assertIn("--dock-icon", self.grokbot_css)
+        self.assertIn("dock-left", self.hermesbot_css)
+        self.assertIn("data-dock-hot", self.hermesbot_css)
+        self.assertIn("--dock-icon", self.hermesbot_css)
         self.assertIn("lastDesktopW", ui)
         self.assertIn("/%|calc\\(/", ui)
         self.assertIn("areaPoint", ui)
 
     def test_minios_has_ubuntu_os_chrome(self) -> None:
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertIn('id="os-boot"', self.index)
         self.assertIn('id="os-login"', self.index)
         self.assertIn('id="os-power-btn"', self.index)
@@ -1332,8 +1332,8 @@ class MiniOSFrontendTests(unittest.TestCase):
         self.assertIn("os-settings-password", self.index)
         self.assertIn('data-window-app="settings"', self.index)
         self.assertIn('data-desktop-app="settings"', self.index)
-        self.assertIn(".cluster-field input", self.grokbot_css)
-        self.assertIn(".secret-input-row input", self.grokbot_css)
+        self.assertIn(".cluster-field input", self.hermesbot_css)
+        self.assertIn(".secret-input-row input", self.hermesbot_css)
         self.assertIn("refreshOsLock", ui)
         self.assertIn("minios-lock-password", ui)
         self.assertIn("function wireOsSettings", ui)
@@ -1372,7 +1372,7 @@ class MiniOSFrontendTests(unittest.TestCase):
         self.assertIn("function notepadGoDir", self.app)
         self.assertIn("fromDialog", self.app)
         self.assertIn("function currentBot", self.app)
-        self.assertIn("grok-desk-selected-bot", self.app)
+        self.assertIn("hermes-desk-selected-bot", self.app)
         self.assertIn("Documents/Untitled.txt", self.app)
         self.assertIn('"notepad"', self.deskd)
         self.assertIn("app_notepad", self.deskd)
@@ -1385,15 +1385,15 @@ class MiniOSFrontendTests(unittest.TestCase):
         self.assertIn("action == \"screenshot\"", self.deskd)
         self.assertIn("screenshot_minios_desktop", self.deskd)
         self.assertIn("Never the host/user monitor", self.desktop_mcp)
-        self.assertNotIn("Never screenshot the host/user monitor", d.agent_md_for_kind("grok-build"))
+        self.assertNotIn("Never screenshot the host/user monitor", d.agent_md_for_kind("hermes"))
         self.assertNotIn("Show the workspace desktop (files", self.deskd)
         self.assertIn("desktop.capture-request", self.deskd)
         self.assertIn("function miniosViewState", self.app)
         self.assertIn("function postMiniosView", self.app)
         self.assertIn("dock: dockEdge", self.app)
-        self.assertIn("minios-dock-edge", (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8"))
+        self.assertIn("minios-dock-edge", (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8"))
         self.assertIn("dock-'+edge", (ROOT / "deskd" / "surfaces.py").read_text(encoding="utf-8"))
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertIn('document.body.classList.contains("observer-mode")', ui)
         self.assertIn("ensureMaximizedDesktopWindow", ui)
         self.assertIn("ensureMaximized", ui)
@@ -1554,9 +1554,9 @@ await retry;
 ''')
         self.assertIn("if (!state.stopped[b.id]) setWorking(b.id, true)", self.app)
 
-    def test_grok_build_slash_menu_in_composer(self) -> None:
+    def test_hermes_slash_menu_in_composer(self) -> None:
         self.assertIn('id="slash-menu"', self.index)
-        self.assertIn("const GROK_BUILD_SLASH", self.app)
+        self.assertIn("const AGENT_SLASH", self.app)
         self.assertIn("function syncSlashMenu", self.app)
         self.assertIn("function handleSlash", self.app)
         self.assertIn("function slashSubfields", self.app)
@@ -1578,7 +1578,7 @@ await retry;
         self.assertIn("thinkingFieldRows(", models_src)
         self.assertIn("more: hasThink", models_src)
         self.assertNotIn("kind: \"heading\"", models_src.split("return models.map", 1)[-1])
-        self.assertIn(".slash-item.is-current", self.grokbot_css)
+        self.assertIn(".slash-item.is-current", self.hermesbot_css)
         self.assertNotIn("Use /model <id> [effort] to switch.", self.app)
         self.assertIn('fieldSource: "workflows"', self.app)
         self.assertIn('fieldSource: "memory"', self.app)
@@ -1592,14 +1592,14 @@ await retry;
         self.assertIn("available_commands_update", self.deskd)
         self.assertIn("session.commands", self.deskd)
         self.assertIn('entry["input"]', self.deskd)
-        self.assertIn(".slash-menu", self.grokbot_css)
-        self.assertIn(".slash-item .slash-arg", self.grokbot_css)
-        self.assertIn("openUserSettings", (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8"))
+        self.assertIn(".slash-menu", self.hermesbot_css)
+        self.assertIn(".slash-item .slash-arg", self.hermesbot_css)
+        self.assertIn("openUserSettings", (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8"))
         handle = self.app.split("async function handleSlash", 1)[1].split("async function undoLastTurn", 1)[0]
-        self.assertIn('if (grokBuild) return false;', handle)
-        self.assertIn('if (arg && grokBuild) return false;', handle)
+        self.assertIn('if (agentBuild) return false;', handle)
+        self.assertIn('if (arg && agentBuild) return false;', handle)
         self.assertIn("return false;", handle)
-        self.assertNotIn("if (effort && grokBuild) return false", handle)
+        self.assertNotIn("if (effort && agentBuild) return false", handle)
         self.assertIn("await applyBotModel(b, modelId, effort || undefined)", handle)
         self.assertIn("await applyBotModel(b, b.model, level)", handle)
         self.assertIn("row.setting", self.app)
@@ -1631,7 +1631,7 @@ await retry;
         self.assertNotIn("gb-fold-btn", self.app)
         self.assertNotIn(".gb-fold-btn", self.css)
         self.assertIn(".gb-tool.is-failed", self.css)
-        self.assertIn("Same tools, answers, and transcript as a regular grok TUI session", self.index)
+        self.assertIn("Same tools, answers, and transcript as a regular Hermes TUI session", self.index)
 
     def test_grok_build_tui_parity_progress_todos_workflow_effort(self) -> None:
         # TUI-style transient progress line: the local-model prefill wait is a
@@ -1643,7 +1643,7 @@ await retry;
         self.assertIn("def emit_local_progress", self.deskd)
         self.assertIn('"sessionUpdate": "agent_progress"', self.deskd)
         prefill = self.deskd.split("def start_local_prefill_progress", 1)[1].split("threading.Thread(target=tick", 1)[0]
-        self.assertIn("bot_kind_is_grok_build(bot)", prefill)
+        self.assertIn("bot_kind_is_agent(bot)", prefill)
         self.assertIn("emit_local_progress", prefill)
         self.assertIn('emit_local_activity(bot, "Thinking…")', prefill)
         self.assertIn("Reading the local-model prompt", prefill)
@@ -1654,19 +1654,19 @@ await retry;
         self.assertIn("function renderTodoBlock", self.app)
         self.assertIn("found.isTodos = true", self.app)
         self.assertIn("m.isTodos && (m.todos || []).length", self.app)
-        self.assertIn(".gb-todo", self.grokbot_css)
-        self.assertIn(".todo-row", self.grokbot_css)
-        self.assertIn(".todo-row.st-in_progress", self.grokbot_css)
+        self.assertIn(".gb-todo", self.hermesbot_css)
+        self.assertIn(".todo-row", self.hermesbot_css)
+        self.assertIn(".todo-row.st-in_progress", self.hermesbot_css)
         # Subagent / workflow progress.
         self.assertIn('if (/spawn_subagent/.test(name)) return "Subagent";', self.app)
         self.assertIn('if (name === "workflow") return "Workflow";', self.app)
         self.assertIn("function trackWorkflowRun", self.app)
         self.assertIn("b.workflow_runs = b.workflow_runs || []", self.app)
-        # TUI status line: reasoning effort shown for Grok Build bots only.
+        # TUI status line: reasoning effort shown for Hermes Agent bots only.
         self.assertIn('id="effort-chip"', self.index)
-        self.assertIn('b.kind === "grok-build" ? currentEffort(b) : ""', self.app)
-        self.assertIn(".effort-chip[hidden]", self.grokbot_css)
-        self.assertIn(".gb-progress", self.grokbot_css)
+        self.assertIn('b.kind === "hermes" ? currentEffort(b) : ""', self.app)
+        self.assertIn(".effort-chip[hidden]", self.hermesbot_css)
+        self.assertIn(".gb-progress", self.hermesbot_css)
 
     def test_chat_stays_pinned_to_latest(self) -> None:
         self.assertIn("function stickTranscript", self.app)
@@ -1679,7 +1679,7 @@ await retry;
         self.assertIn("def collapse_restarted_assistant", self.deskd)
         self.run_frontend_node(r'''
 load('const STREAM_RESTART_HEAD', 'function mdInline(');
-const head = "Here's the honest, system-specific breakdown — what each one actually buys you on grok-desk, and where the real value (and risk) is.\n";
+const head = "Here's the honest, system-specific breakdown — what each one actually buys you on hermes-desk, and where the real value (and risk) is.\n";
 const truncated = head + "Chrome DevTools — adopt now.\nthen copy the good ones into the";
 const full = truncated + " skills directory and watch. Telescope first.";
 const merged = mergeAssistantStream(truncated, "\n" + full);
@@ -1705,7 +1705,7 @@ const makeEl = () => {
     setAttribute() {}, addEventListener() {}, open: false };
 };
 document.createElement = makeEl;
-const b = { id: 'gb1', kind: 'grok-build', messages: [] };
+const b = { id: 'gb1', kind: 'hermes', messages: [] };
 // Prefill wait: one progress line that updates in place, cleared when tokens start.
 applySessionTurn(b, { sessionUpdate: 'agent_progress', content: { text: 'Reading the local-model prompt (23,425 tokens). First token waits on GPU prefill…' } });
 assert.equal(b.messages.length, 1);
@@ -1795,7 +1795,7 @@ assert.ok(!b.messages.some((m) => m.role === 'progress'));
         self.assertIn("CHAT_IMAGE_MAX_EDGE", self.app)
         self.assertIn("ingestClipboardEvent", self.app)
         self.assertNotIn('$("attach-btn")?.addEventListener("click", () => $("file-input")?.click())', self.app)
-        self.assertIn("body.mobile-chat #file-input", self.grokbot_css)
+        self.assertIn("body.mobile-chat #file-input", self.hermesbot_css)
         self.assertIn("opacity: 0", self.css)
 
     def test_observer_mode_renders_minios_only(self) -> None:
@@ -1805,9 +1805,9 @@ assert.ok(!b.messages.some((m) => m.role === 'progress'));
         self.assertNotIn('\\nbody.observer-mode', self.css)
         self.assertIn('body.observer-mode .ubuntu-desktop-area', self.css)
         self.assertIn('.ubuntu-desktop-area', (ROOT / "deskd" / "surfaces.py").read_text(encoding="utf-8"))
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertIn('get("observe")', ui)
-        self.assertIn("body.observer-mode #os-login", self.grokbot_css)
+        self.assertIn("body.observer-mode #os-login", self.hermesbot_css)
         self.assertIn('document.body.classList.add("observer-mode")', self.index)
 
     def test_desktop_observer_endpoints_exist(self) -> None:
@@ -1817,10 +1817,10 @@ assert.ok(!b.messages.some((m) => m.role === 'progress'));
         self.assertIn('def observer_state', self.deskd)
 
     def test_agent_prompt_requires_visual_verification(self) -> None:
-        grok = d.agent_md_for_kind("grok-build")
+        hermes = d.agent_md_for_kind("hermes")
         teela = d.agent_md_for_kind("teela-brain")
-        self.assertNotIn("persistent visual mirror", grok.lower())
-        self.assertNotIn("desktop_observe", grok)
+        self.assertNotIn("persistent visual mirror", hermes.lower())
+        self.assertNotIn("desktop_observe", hermes)
         self.assertIn("desktop_observe", self.desktop_mcp)
         self.assertIn("desktop_watch", self.desktop_mcp)
         self.assertIn("You have a body", teela)
@@ -1830,16 +1830,16 @@ assert.ok(!b.messages.some((m) => m.role === 'progress'));
 
     def test_standard_arrow_cursor_and_click_tools_exist(self) -> None:
         self.assertIn('class="agent-cursor-arrow"', self.index)
-        self.assertIn('fill:#fff; stroke:#111', self.grokbot_css)
+        self.assertIn('fill:#fff; stroke:#111', self.hermesbot_css)
         self.assertIn('"name": "desktop_click"', self.desktop_mcp)
         self.assertIn('"name": "desktop_double_click"', self.desktop_mcp)
         self.assertIn('function agentBrowserClick', self.app)
         self.assertIn('type: "mousePressed"', self.app)
         self.assertIn('type: "mouseReleased"', self.app)
         self.assertIn('id="browser-hit"', self.index)
-        self.assertNotIn("minmax(0,1fr) 30px", self.grokbot_css)
-        self.assertIn("28px 28px minmax(0,1fr)", self.grokbot_css)
-        self.assertNotIn("auto 28px 28px minmax(0,1fr)", self.grokbot_css)
+        self.assertNotIn("minmax(0,1fr) 30px", self.hermesbot_css)
+        self.assertIn("28px 28px minmax(0,1fr)", self.hermesbot_css)
+        self.assertNotIn("auto 28px 28px minmax(0,1fr)", self.hermesbot_css)
         self.assertIn('enqueueBrowser({ type: "mouseMoved", x, y, modifiers: mods })', self.app)
         self.assertIn("def _focus_point", (ROOT / "deskd" / "surfaces.py").read_text(encoding="utf-8"))
 
@@ -1882,7 +1882,7 @@ assert.ok(!b.messages.some((m) => m.role === 'progress'));
         self.assertIn("scheduleAgentCursorHide", self.app)
         self.assertIn("AGENT_CURSOR_IDLE_MS", self.app)
         self.assertIn("moveAgentDesktopCursor(b.desktop_cursor?.x ?? 500, b.desktop_cursor?.y ?? 500, false, false)", self.app)
-        self.assertIn(".agent-desktop-cursor.is-active", self.grokbot_css)
+        self.assertIn(".agent-desktop-cursor.is-active", self.hermesbot_css)
 
     def test_cursor_position_is_persisted_per_bot(self) -> None:
         self.assertIn('self.desktop_cursor = {"x": 500.0, "y": 500.0}', self.deskd)

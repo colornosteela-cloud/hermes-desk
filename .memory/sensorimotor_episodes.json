@@ -1,0 +1,184 @@
+{
+  "episodes": [
+    {
+      "type": "sensorimotor_episode",
+      "episode_id": "sme_9918019",
+      "timestamp": "2026-09-15T22:05:18Z",
+      "goal": "pose",
+      "before": {
+        "head_pan": 0.0,
+        "head_tilt": 0.0,
+        "pose": "home",
+        "revision": 1
+      },
+      "action": {
+        "skill": "pose",
+        "command": "robot_pose",
+        "params": {
+          "pose": "wave",
+          "cmd": "pose"
+        },
+        "target": null
+      },
+      "actual_result": {
+        "head_pan": 0.0,
+        "head_tilt": 0.0,
+        "pose": "home",
+        "revision": 2
+      },
+      "perception_after": {
+        "user_centered": false,
+        "target_reached": true
+      },
+      "outcome": {
+        "success": true,
+        "status": "ok",
+        "command_sent": true
+      },
+      "metrics": {
+        "settle_time_ms": 4,
+        "final_error_deg": null,
+        "target_error_deg": null
+      },
+      "source": "MINIOS",
+      "provenance": "OBSERVATION",
+      "user_feedback": null,
+      "software_version": "teela-embodied-1"
+    },
+    {
+      "type": "sensorimotor_episode",
+      "episode_id": "sme_9918032",
+      "timestamp": "2026-09-15T22:05:18Z",
+      "goal": "wave",
+      "before": {
+        "head_pan": 0.0,
+        "head_tilt": 0.0,
+        "pose": "home",
+        "revision": 2
+      },
+      "action": {
+        "skill": "wave",
+        "command": "teela_body_action",
+        "params": {
+          "skill": "wave",
+          "side": "right"
+        },
+        "target": null
+      },
+      "actual_result": {
+        "head_pan": 0.0,
+        "head_tilt": 0.0,
+        "pose": "wave",
+        "revision": 3
+      },
+      "perception_after": {
+        "user_centered": false,
+        "target_reached": true
+      },
+      "outcome": {
+        "success": false,
+        "status": "executing",
+        "command_sent": true
+      },
+      "metrics": {
+        "settle_time_ms": 2,
+        "final_error_deg": null,
+        "target_error_deg": null
+      },
+      "source": "MINIOS",
+      "provenance": "OBSERVATION",
+      "user_feedback": null,
+      "software_version": "teela-embodied-1"
+    },
+    {
+      "type": "sensorimotor_episode",
+      "episode_id": "sme_381531",
+      "timestamp": "2026-09-15T22:13:01Z",
+      "goal": "pose",
+      "before": {
+        "head_pan": 0.0,
+        "head_tilt": 0.0,
+        "pose": "wave",
+        "revision": 3
+      },
+      "action": {
+        "skill": "pose",
+        "command": "robot_pose",
+        "params": {
+          "pose": "wave",
+          "cmd": "pose"
+        },
+        "target": null
+      },
+      "actual_result": {
+        "head_pan": 0.0,
+        "head_tilt": 0.0,
+        "pose": "home",
+        "revision": 4
+      },
+      "perception_after": {
+        "user_centered": false,
+        "target_reached": true
+      },
+      "outcome": {
+        "success": true,
+        "status": "ok",
+        "command_sent": true
+      },
+      "metrics": {
+        "settle_time_ms": 4,
+        "final_error_deg": null,
+        "target_error_deg": null
+      },
+      "source": "MINIOS",
+      "provenance": "OBSERVATION",
+      "user_feedback": null,
+      "software_version": "teela-embodied-1"
+    },
+    {
+      "type": "sensorimotor_episode",
+      "episode_id": "sme_381546",
+      "timestamp": "2026-09-15T22:13:01Z",
+      "goal": "wave",
+      "before": {
+        "head_pan": 0.0,
+        "head_tilt": 0.0,
+        "pose": "home",
+        "revision": 4
+      },
+      "action": {
+        "skill": "wave",
+        "command": "teela_body_action",
+        "params": {
+          "skill": "wave",
+          "side": "right"
+        },
+        "target": null
+      },
+      "actual_result": {
+        "head_pan": 0.0,
+        "head_tilt": 0.0,
+        "pose": "wave",
+        "revision": 5
+      },
+      "perception_after": {
+        "user_centered": false,
+        "target_reached": true
+      },
+      "outcome": {
+        "success": false,
+        "status": "executing",
+        "command_sent": true
+      },
+      "metrics": {
+        "settle_time_ms": 2,
+        "final_error_deg": null,
+        "target_error_deg": null
+      },
+      "source": "MINIOS",
+      "provenance": "OBSERVATION",
+      "user_feedback": null,
+      "software_version": "teela-embodied-1"
+    }
+  ]
+}

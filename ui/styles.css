@@ -1,4 +1,4 @@
-/* Live Grok Desk surfaces hosted inside the GrokBot chrome. */
+/* Live Hermes Desk surfaces hosted inside the HermesBot chrome. */
 
 [hidden] { display: none !important; }
 
@@ -852,7 +852,7 @@ dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 13px;
 }
 
 /* A dedicated headless browser opens ?observe=<bot_id>.  In that browser the
-   Grok Desk UI becomes the MiniOS display itself, so Page.screencastFrame is
+   Hermes Desk UI becomes the MiniOS display itself, so Page.screencastFrame is
    an actual continuous visual feed of the same desktop the user can inspect. */
 body.observer-mode {
   margin: 0 !important;

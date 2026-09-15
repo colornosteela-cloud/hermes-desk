@@ -39,7 +39,7 @@ function applyTheme(theme) {
   const next = theme === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = next;
   document.body.classList.toggle("dark", next === "dark");
-  localStorage.setItem("grok-desk-theme", next);
+  localStorage.setItem("hermes-desk-theme", next);
   const btn = $("theme-toggle");
   if (btn) {
     btn.textContent = "◐";
@@ -104,7 +104,7 @@ function applyScreenWidth(px, persist = true) {
   const w = clampScreenW(px);
   document.documentElement.style.setProperty("--screen-w", `${w}px`);
   document.documentElement.style.setProperty("--right-w", `${w}px`);
-  if (persist) localStorage.setItem("grok-desk-screen-w", String(w));
+  if (persist) localStorage.setItem("hermes-desk-screen-w", String(w));
   return w;
 }
 
@@ -112,7 +112,7 @@ function applyHallwayWidth(px, persist = true) {
   const w = Math.round(Math.min(420, Math.max(200, px)));
   document.documentElement.style.setProperty("--hallway-w", `${w}px`);
   document.documentElement.style.setProperty("--left-w", `${w}px`);
-  if (persist) localStorage.setItem("grok-desk-hallway-w", String(w));
+  if (persist) localStorage.setItem("hermes-desk-hallway-w", String(w));
   return w;
 }
 
@@ -122,7 +122,7 @@ function applyLeftOpen(open, persist = true) {
     return;
   }
   $("app").classList.toggle("left-collapsed", !open);
-  if (persist) localStorage.setItem("grok-desk-left-open", open ? "1" : "0");
+  if (persist) localStorage.setItem("hermes-desk-left-open", open ? "1" : "0");
   requestAnimationFrame(() => {
     fitTerms();
     window.dispatchEvent(new Event("resize"));
@@ -150,7 +150,7 @@ function applyScreenOpen(open, persist = true) {
   }
   $("app").classList.toggle("screen-closed", !open);
   $("app").classList.toggle("right-collapsed", !open);
-  if (persist) localStorage.setItem("grok-desk-screen-open", open ? "1" : "0");
+  if (persist) localStorage.setItem("hermes-desk-screen-open", open ? "1" : "0");
   if (open && mqDrawer()) setHallwayOpen(false);
   updateScrim();
   requestAnimationFrame(() => {
@@ -161,12 +161,12 @@ function applyScreenOpen(open, persist = true) {
 
 function restoreLayout() {
   if (window.DeskUI) return;
-  const savedW = parseInt(localStorage.getItem("grok-desk-screen-w") || "", 10);
-  const savedH = parseInt(localStorage.getItem("grok-desk-hallway-w") || "", 10);
+  const savedW = parseInt(localStorage.getItem("hermes-desk-screen-w") || "", 10);
+  const savedH = parseInt(localStorage.getItem("hermes-desk-hallway-w") || "", 10);
   if (Number.isFinite(savedW) && savedW > 0) applyScreenWidth(savedW, false);
   if (Number.isFinite(savedH) && savedH > 0) applyHallwayWidth(savedH, false);
-  applyScreenOpen(localStorage.getItem("grok-desk-screen-open") !== "0", false);
-  if (localStorage.getItem("grok-desk-left-open") === "0") applyLeftOpen(false, false);
+  applyScreenOpen(localStorage.getItem("hermes-desk-screen-open") !== "0", false);
+  if (localStorage.getItem("hermes-desk-left-open") === "0") applyLeftOpen(false, false);
 }
 
 function isLoopbackHost() {
@@ -1719,7 +1719,7 @@ function renderRoster() {
       hint.textContent = inbound
         .map(
           (p) =>
-            `${p.name} can reach this desk, but ${p.url} is closed from here. On that computer set Grok Desk address to its LAN IP (not 127.0.0.1) and allow port 8742 in.`
+            `${p.name} can reach this desk, but ${p.url} is closed from here. On that computer set Hermes Desk address to its LAN IP (not 127.0.0.1) and allow port 8742 in.`
         )
         .join(" ");
     } else {
@@ -1773,10 +1773,10 @@ function renderConversation(b) {
   $("screen-sub").textContent = "Agent Computer · live";
   if ($("takeover-agent-name")) $("takeover-agent-name").textContent = `${b.name} — Ubuntu Desktop`;
   window.DeskUI?.refreshOsLock?.();
-  if ($("grok-tui-model")) $("grok-tui-model").textContent = modelLabel(b);
+  if ($("hermes-tui-model")) $("hermes-tui-model").textContent = modelLabel(b);
   if ($("message")) {
     $("message").disabled = false;
-    $("message").placeholder = botIsGrokBuild(b)
+    $("message").placeholder = botIsAgent(b)
       ? `Message ${b.name}  ·  type / for commands`
       : `Message ${b.name}`;
   }
@@ -2004,7 +2004,7 @@ function isCloudPickerRow(m) {
   if (!m) return false;
   if (m.local === false) return true;
   const id = String(m.id || "").toLowerCase();
-  return id.startsWith("grok");
+  return id.startsWith("hermes");
 }
 
 function mergePickerModels(incoming, previous) {
@@ -2052,7 +2052,7 @@ function renderMeta(b) {
   if ($("meta-model")) $("meta-model").textContent = `${modelLabel(b)} ▴`;
   const effortChip = $("effort-chip");
   if (effortChip) {
-    const eff = b.kind === "grok-build" ? currentEffort(b) : "";
+    const eff = b.kind === "hermes" ? currentEffort(b) : "";
     const show = !!(eff && eff !== "off");
     effortChip.hidden = !show;
     effortChip.textContent = show ? `thinking ${eff}` : "";
@@ -2074,8 +2074,8 @@ function renderMeta(b) {
     if (pressure) ctxStat.setAttribute("data-pressure", pressure);
     else ctxStat.removeAttribute("data-pressure");
   }
-  if ($("grok-tui-model")) $("grok-tui-model").textContent = modelLabel(b);
-  const tuiCtx = $("grok-tui-context");
+  if ($("hermes-tui-model")) $("hermes-tui-model").textContent = modelLabel(b);
+  const tuiCtx = $("hermes-tui-context");
   if (tuiCtx) tuiCtx.textContent = `${fmtNum(used)} / ${fmtNum(max)}`;
   const tps = $("tps-counter");
   const tpsVal = Number(b.tps);
@@ -2094,14 +2094,14 @@ function renderMeta(b) {
   if (sel) {
     const current = sel.value;
     sel.innerHTML = "";
-    const grokBuild = b.kind === "grok-build";
+    const agentBuild = b.kind === "hermes";
     for (const m of list) {
       const opt = document.createElement("option");
       opt.value = m.id;
       const llama = String(m.family || m.id || "").toLowerCase().includes("flash-next")
         || m.family === "llamacpp";
-      const cloud = m.local === false || String(m.id || "").toLowerCase().startsWith("grok");
-      const busy = m.available === false && !grokBuild && !cloud && !llama;
+      const cloud = m.local === false || String(m.id || "").toLowerCase().startsWith("hermes");
+      const busy = m.available === false && !agentBuild && !cloud && !llama;
       opt.disabled = busy && m.id !== b.model;
       opt.textContent = busy ? `${m.name || m.id} — not running` : (m.name || m.id);
       if (m.unavailable_reason) opt.title = m.unavailable_reason;
@@ -2513,7 +2513,7 @@ function renderRoutines(list) {
 function currentBot() {
   const bots = state.bots || [];
   let saved = "";
-  try { saved = localStorage.getItem("grok-desk-selected-bot") || ""; } catch { /* ignore */ }
+  try { saved = localStorage.getItem("hermes-desk-selected-bot") || ""; } catch { /* ignore */ }
   const ids = [state.selected, observerBotId, saved].filter(Boolean);
   for (const id of ids) {
     const hit = bots.find((x) => x.id === id || x.workspace_id === id);
@@ -2541,7 +2541,7 @@ async function restoreSelectedBot() {
 async function selectBot(id) {
   if (!id || String(id).startsWith("peer:")) return;
   state.selected = id;
-  try { localStorage.setItem("grok-desk-selected-bot", id); } catch { /* ignore */ }
+  try { localStorage.setItem("hermes-desk-selected-bot", id); } catch { /* ignore */ }
   if (window.DeskUI?.setMobileView) DeskUI.setMobileView("chat");
   else if (mqDrawer()) setHallwayOpen(false);
   renderRoster();
@@ -2605,7 +2605,7 @@ function filesInFolder(files, dir) {
   const seen = new Map();
   for (const f of files || []) {
     const path = String(f.path || "");
-    if (!path || path.startsWith(".git") || path.startsWith(".grok/") || path === ".grok") continue;
+    if (!path || path.startsWith(".git") || path.startsWith(".hermes/") || path === ".hermes") continue;
     if (prefix) {
       if (path === dir) continue;
       if (!path.startsWith(prefix)) continue;
@@ -2874,7 +2874,7 @@ function renderEditorFiles(b, files) {
   const host = $("editor-file-list");
   if (!host) return;
   host.innerHTML = "";
-  const list = (files || []).filter((f) => editorCandidate(f) && !f.path.startsWith(".git/") && !f.path.startsWith(".grok/"));
+  const list = (files || []).filter((f) => editorCandidate(f) && !f.path.startsWith(".git/") && !f.path.startsWith(".hermes/"));
   if (!list.length) {
     host.innerHTML = '<div class="minios-empty">No text/code files yet.</div>';
     return;
@@ -3665,7 +3665,7 @@ function postRobotCommand(msg) {
   const iframe = $("app-preview-frame");
   if (!iframe) return;
   persistRobotEditGen++;
-  const payload = { ...msg, source: "grok-desk", type: "robot-command" };
+  const payload = { ...msg, source: "hermes-desk", type: "robot-command" };
   const gen = ++robotCommandGen;
   state.lastRobotCommand = payload;
   const send = () => {
@@ -4071,7 +4071,7 @@ function applyDesktopAction(msg) {
       const local = String(last.pose || "");
       const localSrc = String(last.source || "");
       // Wave Right already started the overlay locally; don't replay it.
-      if (local === "wave" && (localSrc === "UI" || localSrc === "grok-desk")) return;
+      if (local === "wave" && (localSrc === "UI" || localSrc === "hermes-desk")) return;
       const incomingSeq = Number(msg.seq);
       const localSeq = Number(last.seq);
       // Stale persist of an old wave must not restart after Arms Forward / Stop.
@@ -4090,7 +4090,7 @@ function applyDesktopAction(msg) {
         || pose === "left_leg_raise" || pose === "right_leg_raise"
         || pose === "kneel_left" || pose === "kneel_right" || pose === "kneel_both")
       && pose === local
-      && (localSrc === "UI" || localSrc === "grok-desk")) {
+      && (localSrc === "UI" || localSrc === "hermes-desk")) {
       return;
     }
     postRobotCommand(msg);
@@ -4384,11 +4384,11 @@ async function ingestClipboardEvent(e) {
   return true;
 }
 
-const GROK_BUILD_EFFORT = ["off", "low", "medium", "high", "xhigh"];
-const GROK_BUILD_WORKFLOWS = [
+const AGENT_EFFORT = ["off", "low", "medium", "high", "xhigh"];
+const AGENT_WORKFLOWS = [
   { id: "deep-research", hint: "Research a query with cited report" },
 ];
-const GROK_BUILD_SLASH = [
+const AGENT_SLASH = [
   { cmd: "/help", hint: "List slash commands", send: true, source: "built-in" },
   { cmd: "/new", aliases: ["/clear"], hint: "Start a fresh chat", run: "new", source: "built-in" },
   { cmd: "/resume", hint: "Reload a previous session", send: true, source: "built-in" },
@@ -4462,12 +4462,12 @@ let slashIndex = 0;
 let slashHits = [];
 let slashLevelKey = "";
 
-function botIsGrokBuild(b) {
-  return (b?.kind || "") === "grok-build";
+function botIsAgent(b) {
+  return (b?.kind || "") === "hermes";
 }
 
 function botHasRobotSimulator(b) {
-  return Boolean(b) && !botIsGrokBuild(b);
+  return Boolean(b) && !botIsAgent(b);
 }
 window.botHasRobotSimulator = botHasRobotSimulator;
 
@@ -4548,7 +4548,7 @@ function slashNames(row) {
 
 function slashCatalog(b) {
   const effort = currentEffort(b);
-  const out = GROK_BUILD_SLASH.map((row) => {
+  const out = AGENT_SLASH.map((row) => {
     const copy = { ...row };
     if (effort && (copy.cmd === "/model" || copy.cmd === "/effort")) {
       copy.hint = `${copy.hint} · thinking ${effort}`;
@@ -4562,7 +4562,7 @@ function slashCatalog(b) {
     const cmd = `/${name}`;
     if (seen.has(cmd.toLowerCase())) continue;
     seen.add(cmd.toLowerCase());
-    const hint = String(raw.hint || raw.description || (raw.input && raw.input.hint) || "Grok Build command");
+    const hint = String(raw.hint || raw.description || (raw.input && raw.input.hint) || "Hermes Agent command");
     const argHint = String((raw.input && raw.input.hint) || raw.argHint || raw.argument_hint || "");
     const fields = Array.isArray(raw.fields) && raw.fields.length
       ? raw.fields
@@ -4598,7 +4598,7 @@ function matchSlashCommand(rows, cmdTok) {
 }
 
 function workflowNames(b) {
-  const out = GROK_BUILD_WORKFLOWS.map((w) => ({ ...w }));
+  const out = AGENT_WORKFLOWS.map((w) => ({ ...w }));
   const seen = new Set(out.map((w) => w.id.toLowerCase()));
   for (const raw of b?.workflows || []) {
     const id = String(raw.id || raw.name || raw).trim();
@@ -4666,7 +4666,7 @@ function effortLevelsFor(b, modelId) {
     })));
   }
   if (hit.supports_reasoning_effort === false) return [];
-  return withOffLevel(GROK_BUILD_EFFORT.map((level) => ({ value: level, hint: effortHint(level) })));
+  return withOffLevel(AGENT_EFFORT.map((level) => ({ value: level, hint: effortHint(level) })));
 }
 
 function effortFieldRows(prefix, extra, current) {
@@ -4674,7 +4674,7 @@ function effortFieldRows(prefix, extra, current) {
   const levels = extra?.levels;
   const rows = Array.isArray(levels) && levels.length
     ? withOffLevel(levels)
-    : withOffLevel(GROK_BUILD_EFFORT.map((level) => ({ value: level, hint: effortHint(level) })));
+    : withOffLevel(AGENT_EFFORT.map((level) => ({ value: level, hint: effortHint(level) })));
   return rows.map((row) => {
     const level = normalizeEffort(row.value || row);
     const hint = effortHint(level, row.hint);
@@ -4842,7 +4842,7 @@ function slashHasSubfields(row) {
 
 function renderSlashMenu(b, typed) {
   const menu = $("slash-menu");
-  if (!menu || !botIsGrokBuild(b)) {
+  if (!menu || !botIsAgent(b)) {
     hideSlashMenu();
     return;
   }
@@ -4905,7 +4905,7 @@ function renderSlashMenu(b, typed) {
 function syncSlashMenu() {
   const b = state.bots.find((x) => x.id === state.selected);
   const typed = ($("message")?.value || "");
-  if (!botIsGrokBuild(b) || !typed.startsWith("/")) {
+  if (!botIsAgent(b) || !typed.startsWith("/")) {
     hideSlashMenu();
     return;
   }
@@ -5035,7 +5035,7 @@ async function handleSlash(text, b) {
   const parts = text.split(/\s+/);
   const cmd = (parts[0] || "").toLowerCase();
   const arg = parts.slice(1).join(" ").trim();
-  const grokBuild = botIsGrokBuild(b);
+  const agentBuild = botIsAgent(b);
   const sys = (msg) => {
     b.messages = b.messages || [];
     b.messages.push({ role: "user", text });
@@ -5043,12 +5043,12 @@ async function handleSlash(text, b) {
     renderConversation(b);
   };
   if (cmd === "/help") {
-    if (grokBuild) return false;
+    if (agentBuild) return false;
     sys("Commands: /undo — rewind last turn (kept in the log, dropped from chat, memory, and export). /model [id] — show or switch model. /help");
     return true;
   }
   if (cmd === "/new" || cmd === "/clear") {
-    if (!grokBuild) return false;
+    if (!agentBuild) return false;
     await startNewChat();
     return true;
   }
@@ -5076,7 +5076,7 @@ async function handleSlash(text, b) {
     return true;
   }
   if (cmd === "/plugins") {
-    if (arg && grokBuild) return false;
+    if (arg && agentBuild) return false;
     window.DeskUI?.openPlugins?.();
     return true;
   }
@@ -5541,7 +5541,7 @@ function micSpeechFrame() {
 
 function loadMicSettings() {
   try {
-    const j = JSON.parse(localStorage.getItem("grok-desk-mic") || "{}");
+    const j = JSON.parse(localStorage.getItem("hermes-desk-mic") || "{}");
     if (Number.isFinite(+j.sensitivity)) voiceChat.sensitivity = Math.min(100, Math.max(0, +j.sensitivity));
     if (Number.isFinite(+j.barge)) voiceChat.barge = Math.min(100, Math.max(0, +j.barge));
     if (Number.isFinite(+j.hang)) voiceChat.hangMs = Math.min(2500, Math.max(400, +j.hang));
@@ -5556,7 +5556,7 @@ function loadMicSettings() {
 
 function saveMicSettings() {
   try {
-    localStorage.setItem("grok-desk-mic", JSON.stringify({
+    localStorage.setItem("hermes-desk-mic", JSON.stringify({
       v: 2,
       sensitivity: voiceChat.sensitivity,
       barge: voiceChat.barge,
@@ -6312,7 +6312,7 @@ $("composer").addEventListener("submit", async (e) => {
       return;
     }
   }
-  if (text.startsWith("/") && b0 && botIsGrokBuild(b0)) {
+  if (text.startsWith("/") && b0 && botIsAgent(b0)) {
     const parsed = parseSlashLine(text);
     const row = parsed && !parsed.args && matchSlashCommand(slashCatalog(b0), parsed.cmdTok);
     if (row && slashHasSubfields(row)) {
@@ -7191,7 +7191,7 @@ async function pollPty(kind) {
     /* bot not selected / empty */
   }
   const live = window.DeskUI?.isWindowLive
-    ? DeskUI.isWindowLive(kind === "tui" ? "grok" : "terminal")
+    ? DeskUI.isWindowLive(kind === "tui" ? "hermes" : "terminal")
     : state.surface === kind;
   setTimeout(() => pollPty(kind), live ? 180 : 1500);
 }
@@ -7588,7 +7588,7 @@ function connectEvents() {
 }
 
 (async function init() {
-  applyTheme(localStorage.getItem("grok-desk-theme") || "light");
+  applyTheme(localStorage.getItem("hermes-desk-theme") || "light");
   restoreLayout();
   fitPhoneFrame();
   autosizeComposer();

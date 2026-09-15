@@ -29,8 +29,8 @@ class ProfileMemoryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        d.GROK_DESKS = self.root / "desks"
-        d.GROK_DESKS.mkdir()
+        d.HERMES_DESKS = self.root / "desks"
+        d.HERMES_DESKS.mkdir()
 
     def tearDown(self) -> None:
         wm._ledgers.pop("b_build00000001", None)
@@ -62,7 +62,7 @@ class ProfileMemoryTests(unittest.TestCase):
         self.assertTrue(cprof.has_cap(embodied, "body_state"))
 
     def test_build_bot_omits_embodied_sections_embodied_can_load(self) -> None:
-        build = self._bot("b_build00000001", kind="grok-build")
+        build = self._bot("b_build00000001", kind="hermes")
         teela = self._bot("b_embod00000001", kind="teela-brain")
         build.memory.write("project decision: keep occupancy honest", ["semantic", "project"])
         teela.memory.write("project decision: keep occupancy honest", ["semantic", "project"])
@@ -264,15 +264,15 @@ class ProfileMemoryHttpTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         home = Path(self.tmp.name)
-        self._orig_desks = d.GROK_DESKS
-        d.GROK_DESKS = home / "desks"
-        d.GROK_DESKS.mkdir()
+        self._orig_desks = d.HERMES_DESKS
+        d.HERMES_DESKS = home / "desks"
+        d.HERMES_DESKS.mkdir()
         token_dir = home / "run"
         token_dir.mkdir()
         self._orig_token = d.TOKEN_PATH
         d.TOKEN_PATH = token_dir / "token"
         d.TOKEN_PATH.write_text("profile-token", encoding="utf-8")
-        self.build = d.Bot("b_buildhttp0001", "Coder", "", "", "qwen38-27b-q5", "x", kind="grok-build")
+        self.build = d.Bot("b_buildhttp0001", "Coder", "", "", "qwen38-27b-q5", "x", kind="hermes")
         self.teela = d.Bot("b_embodhttp0001", "Teela", "", "", "qwen38-27b-q5", "x", kind="teela-brain")
         for bot in (self.build, self.teela):
             bot.root = home / f"root_{bot.id}"
@@ -296,7 +296,7 @@ class ProfileMemoryHttpTests(unittest.TestCase):
         d.bots.pop(self.teela.id, None)
         wm._ledgers.pop(self.build.id, None)
         wm._ledgers.pop(self.teela.id, None)
-        d.GROK_DESKS = self._orig_desks
+        d.HERMES_DESKS = self._orig_desks
         d.TOKEN_PATH = self._orig_token
         self.tmp.cleanup()
 
@@ -342,7 +342,7 @@ class ProfileMemoryHttpTests(unittest.TestCase):
         self.assertNotEqual(t["body_state"].get("status"), "unavailable")
         stc, _ = self._req(
             f"/v1/bots/{self.teela.id}/working-memory",
-            headers={"Authorization": "", "X-Grok-Cluster-Token": "mesh-secret"},
+            headers={"Authorization": "", "X-Hermes-Cluster-Token": "mesh-secret"},
         )
         self.assertIn(stc, (401, 403))
 

@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Grok Desk</title>
+  <title>Hermes Desk</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Ubuntu:wght@300;400;500;700&family=Ubuntu+Mono:wght@400;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/grokbot.css?v=91" />
+  <link rel="stylesheet" href="/hermesbot.css?v=91" />
   <link rel="stylesheet" href="/styles.css?v=72" />
   <link rel="stylesheet" href="/vendor/xterm.css" />
 </head>
@@ -72,12 +72,12 @@
                 <li class="menu-sep" aria-hidden="true"></li>
                 <li class="menu-heading more-bot-only">Export</li>
                 <li class="more-bot-only"><button type="button" data-fmt="system">System zip</button></li>
-                <li class="more-bot-only"><button type="button" data-fmt="json">Grok Desk JSON</button></li>
+                <li class="more-bot-only"><button type="button" data-fmt="json">Hermes Desk JSON</button></li>
                 <li class="more-bot-only"><button type="button" data-fmt="md">Markdown</button></li>
                 <li class="more-bot-only"><button type="button" data-fmt="chatgpt">ChatGPT</button></li>
                 <li class="more-bot-only"><button type="button" data-fmt="claude">Claude</button></li>
                 <li class="more-bot-only"><button type="button" data-fmt="openai">OpenAI messages</button></li>
-                <li class="more-bot-only"><button type="button" data-fmt="grok">Grok / xAI</button></li>
+                <li class="more-bot-only"><button type="button" data-fmt="hermes">Hermes / xAI</button></li>
                 <li class="menu-sep more-bot-only" aria-hidden="true"></li>
                 <li class="more-bot-only"><button type="button" id="edit-agent">Edit agent</button></li>
                 <li class="more-bot-only"><button type="button" id="edit-soul">SOUL</button></li>
@@ -208,7 +208,7 @@
         </div>
         <div class="workspace-actions">
           <button type="button" class="icon-btn" id="workspace-plugins" title="Plugins">🔌</button>
-          <button type="button" class="icon-btn" id="workspace-settings" title="User &amp; Grok Build Settings">⚙</button>
+          <button type="button" class="icon-btn" id="workspace-settings" title="User &amp; Hermes Agent Settings">⚙</button>
           <button type="button" class="icon-btn" id="workspace-close" title="Close workspace">×</button>
         </div>
       </header>
@@ -278,12 +278,12 @@
                 </button>
 
                 <div id="desktopWindows" class="desktop-windows" aria-label="Ubuntu application windows">
-                  <section class="desktop-window app-window hidden-window" data-window-app="grok" data-surface="tui" data-open="false"
+                  <section class="desktop-window app-window hidden-window" data-window-app="hermes" data-surface="tui" data-open="false"
                            style="left:70px; top:10px; width:calc(100% - 88px); height:calc(100% - 48px); z-index:14;">
                     <div class="desktop-window-titlebar window-drag-handle">
                       <div class="window-title-left">
-                        <span class="window-app-dot grok-dot"></span>
-                        <strong>Grok Build TUI</strong>
+                        <span class="window-app-dot hermes-dot"></span>
+                        <strong>Hermes Agent TUI</strong>
                       </div>
                       <div class="window-controls">
                         <button type="button" class="win-btn close" data-window-action="close" title="Close"></button>
@@ -291,10 +291,10 @@
                         <button type="button" class="win-btn max" data-window-action="maximize" title="Maximize"></button>
                       </div>
                     </div>
-                    <div class="desktop-window-content grok-tui-window">
-                      <div class="grok-tui-header">
-                        <span>GROK BUILD</span>
-                        <span id="grok-tui-model">—</span>
+                    <div class="desktop-window-content hermes-tui-window">
+                      <div class="hermes-tui-header">
+                        <span>HERMES AGENT</span>
+                        <span id="hermes-tui-model">—</span>
                       </div>
                       <div id="tui-frame" class="surface is-on live-term-host" data-surface="tui">
                         <div id="tui-term" class="term"></div>
@@ -638,7 +638,7 @@
                 </div>
 
                 <div id="dock" class="ubuntu-dock dock-left">
-                  <button type="button" class="dock-app dock-btn" data-desktop-app="grok" data-surface="tui" title="Grok Build TUI"><span>&gt;_</span><i></i></button>
+                  <button type="button" class="dock-app dock-btn" data-desktop-app="hermes" data-surface="tui" title="Hermes Agent TUI"><span>&gt;_</span><i></i></button>
                   <button type="button" class="dock-app dock-btn" data-desktop-app="files" data-surface="desktop" title="Files"><span>📁</span><i></i></button>
                   <button type="button" class="dock-app dock-btn" data-desktop-app="notepad" title="Text Editor"><span>📄</span><i></i></button>
                   <button type="button" class="dock-app dock-btn" data-desktop-app="terminal" data-surface="shell" title="Terminal"><span>⌘</span><i></i></button>
@@ -654,7 +654,7 @@
             </div>
 
             <div class="desktop-shortcuts">
-              <button type="button" class="desktop-shortcut dock-btn" data-desktop-app="grok" data-surface="tui">&gt;_ Grok</button>
+              <button type="button" class="desktop-shortcut dock-btn" data-desktop-app="hermes" data-surface="tui">&gt;_ Hermes</button>
               <button type="button" class="desktop-shortcut dock-btn" data-desktop-app="browser" data-surface="browser">🌐 Browser</button>
               <button type="button" class="desktop-shortcut dock-btn" data-desktop-app="files" data-surface="desktop">📁 Files</button>
               <button type="button" class="desktop-shortcut dock-btn" data-desktop-app="notepad">📄 Text</button>
@@ -827,8 +827,8 @@
     <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
       <div class="modal-header">
         <div>
-          <h2 id="settings-modal-title">User & Grok Build Settings</h2>
-          <p>Edit your profile, models, endpoints, environment variables, and generated Grok configuration.</p>
+          <h2 id="settings-modal-title">User & Hermes Agent Settings</h2>
+          <p>Edit your profile, models, endpoints, environment variables, and generated Hermes configuration.</p>
         </div>
         <button id="close-settings" class="icon-btn" type="button">×</button>
       </div>
@@ -853,8 +853,8 @@
               <div class="settings-form-grid">
                 <label>Display name<input id="settings-display-name" value="Roni" autocomplete="off" /></label>
                 <label>Initials<input id="settings-initials" maxlength="3" value="R" autocomplete="off" /></label>
-                <label class="span-2">Local Grok home<input id="settings-grok-home" value="~/.grok" autocomplete="off" /></label>
-                <label>Grok Desk address<input id="settings-desk-host" placeholder="127.0.0.1" autocomplete="off" /></label>
+                <label class="span-2">Local Hermes home<input id="settings-hermes-home" value="~/.hermes" autocomplete="off" /></label>
+                <label>Hermes Desk address<input id="settings-desk-host" placeholder="127.0.0.1" autocomplete="off" /></label>
                 <label>Port<input id="settings-desk-port" type="number" min="1" max="65535" step="1" /></label>
                 <p class="span-2 muted" id="settings-desk-hint">Default 127.0.0.1 stays on this computer only. Saving a LAN cluster peer automatically binds this desk on your LAN IP so the other host can list your bots.</p>
               </div>
@@ -967,8 +967,8 @@
               </div>
             </div>
             <div class="settings-form-grid">
-              <label class="span-2">GROK_MODELS_BASE_URL<input id="env-models-base-url" placeholder="https://gateway.example.com/v1" /></label>
-              <label class="span-2">GROK_MODELS_LIST_URL<input id="env-models-list-url" placeholder="Optional custom /v1/models URL" /></label>
+              <label class="span-2">HERMES_MODELS_BASE_URL<input id="env-models-base-url" placeholder="https://gateway.example.com/v1" /></label>
+              <label class="span-2">HERMES_MODELS_LIST_URL<input id="env-models-list-url" placeholder="Optional custom /v1/models URL" /></label>
               <label>
                 XAI_API_KEY
                 <div class="secret-input-row">
@@ -977,14 +977,14 @@
                 </div>
               </label>
               <label>
-                GROK_CODE_XAI_API_KEY
+                HERMES_CODE_API_KEY
                 <div class="secret-input-row">
-                  <input id="env-grok-code-api-key" type="password" placeholder="Compatibility API key" />
-                  <button type="button" class="small-action secret-toggle" data-secret-target="env-grok-code-api-key">Show</button>
+                  <input id="env-hermes-code-api-key" type="password" placeholder="Compatibility API key" />
+                  <button type="button" class="small-action secret-toggle" data-secret-target="env-hermes-code-api-key">Show</button>
                 </div>
               </label>
-              <label>GROK_DEFAULT_MODEL<input id="env-default-model" placeholder="Optional environment override" /></label>
-              <label>GROK_CONFIG_PATH<input id="env-config-path" placeholder="Optional overlay config path" /></label>
+              <label>HERMES_DEFAULT_MODEL<input id="env-default-model" placeholder="Optional environment override" /></label>
+              <label>HERMES_CONFIG_PATH<input id="env-config-path" placeholder="Optional overlay config path" /></label>
             </div>
             <div class="generated-box">
               <div class="generated-box-header">
@@ -997,7 +997,7 @@
           <section class="settings-panel" data-settings-panel="toml">
             <div class="settings-section-title">
               <div>
-                <h3>~/.grok/config.toml</h3>
+                <h3>~/.hermes/config.toml</h3>
                 <p>Generated from the settings above, or load an existing TOML file.</p>
               </div>
             </div>
@@ -1010,7 +1010,7 @@
             </div>
             <textarea id="raw-toml-editor" class="raw-config-editor" spellcheck="false"></textarea>
             <div class="settings-warning">
-              Saving here stores the generated config in this browser. Download <code>config.toml</code> and place it in your Grok home to apply it on the host.
+              Saving here stores the generated config in this browser. Download <code>config.toml</code> and place it in your Hermes home to apply it on the host.
             </div>
           </section>
         </div>
@@ -1074,9 +1074,9 @@
             <legend>Agent type</legend>
             <div class="agent-kind-cards">
               <label class="agent-kind-card">
-                <input type="radio" name="agent-kind" id="agent-kind-grok-build" value="grok-build" />
-                <strong>Grok Build</strong>
-                <span>Same tools, answers, and transcript as a regular grok TUI session. No robot body.</span>
+                <input type="radio" name="agent-kind" id="agent-kind-hermes" value="hermes" />
+                <strong>Hermes Agent</strong>
+                <span>Same tools, answers, and transcript as a regular Hermes TUI session. No robot body.</span>
               </label>
               <label class="agent-kind-card">
                 <input type="radio" name="agent-kind" id="agent-kind-teela-brain" value="teela-brain" checked />
@@ -1116,7 +1116,7 @@
       <div class="modal-header">
         <div>
           <h2 id="plugins-title">Plugins</h2>
-          <p>Add capabilities to your bots. Installed plugins are remembered in this browser; live tools still come from each bot’s Grok home.</p>
+          <p>Add capabilities to your bots. Installed plugins are remembered in this browser; live tools still come from each bot’s Hermes home.</p>
         </div>
         <button id="close-plugins-modal" class="icon-btn" type="button">×</button>
       </div>
@@ -1187,7 +1187,7 @@
 
   <script src="/vendor/xterm.js"></script>
   <script src="/vendor/xterm-addon-fit.js"></script>
-  <script src="/grokbot-ui.js?v=63"></script>
+  <script src="/hermesbot-ui.js?v=63"></script>
   <script src="/app.js?v=203"></script>
   <script src="/working-memory.js?v=3"></script>
 </body>

@@ -10,8 +10,8 @@ import os
 import re
 from typing import Any
 
-JETSON_PEER = os.environ.get("GROK_DESK_JETSON_NODE", "teela-jetson")
-BODY_PEER = os.environ.get("GROK_DESK_BODY_NODE", "teela-body")
+JETSON_PEER = os.environ.get("HERMES_DESK_JETSON_NODE", "teela-jetson")
+BODY_PEER = os.environ.get("HERMES_DESK_BODY_NODE", "teela-body")
 EXECUTE_PATH = "/v1/cluster/robot/execute"
 WBC_PATH = "/v1/cluster/robot/wbc"
 CAP_PATH = "/v1/cluster/robot/capabilities"
@@ -78,8 +78,8 @@ def balance_mode(cmd: str, text: str = "") -> str:
 
 def capabilities(node_name: str) -> dict[str, Any]:
     role = node_role(node_name)
-    wbc = os.environ.get("GROK_DESK_WBC", "").strip() in {"1", "true", "yes"}
-    motors = os.environ.get("GROK_DESK_MOTORS", "").strip() in {"1", "true", "yes"}
+    wbc = os.environ.get("HERMES_DESK_WBC", "").strip() in {"1", "true", "yes"}
+    motors = os.environ.get("HERMES_DESK_MOTORS", "").strip() in {"1", "true", "yes"}
     return {
         "node": node_name,
         "role": role,
@@ -206,7 +206,7 @@ def dispatch(
     if mode == "dynamic":
         loaded = wbc_loaded
         if loaded is None:
-            loaded = os.environ.get("GROK_DESK_WBC", "").strip() in {"1", "true", "yes"}
+            loaded = os.environ.get("HERMES_DESK_WBC", "").strip() in {"1", "true", "yes"}
         if not loaded:
             out["reason"] = "wbc not loaded; dynamic motion stays in the MiniOS twin"
             out["wbc"] = _peer_post(cluster, BODY_PEER, WBC_PATH, payload)

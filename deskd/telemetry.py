@@ -1,6 +1,6 @@
-"""Context-window and generation-speed telemetry for Grok Desk.
+"""Context-window and generation-speed telemetry for Hermes Desk.
 
-Grok Build / ACP is the source of truth. This module only interprets payloads
+Hermes Agent / ACP is the source of truth. This module only interprets payloads
 already emitted by the runtime; it does not invent billed usage.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-# Built-in Grok Build defaults. Used only when ACP / user model config omit a window.
+# Built-in Hermes Agent defaults. Used only when ACP / user model config omit a window.
 KNOWN_CONTEXT_WINDOWS = {
     "grok-4.6": 500000,
     "grok-4.5": 256000,
@@ -36,8 +36,8 @@ _LEDGER_KEYS = {
     "cache_creation_tokens",
 }
 
-# GPT-style word/punct split used only when Grok does not report output tokens
-# for the current generation. Not the official Grok vocabulary.
+# GPT-style word/punct split used only when Hermes does not report output tokens
+# for the current generation. Not the official Hermes vocabulary.
 _TOKEN_RE = re.compile(
     r"'(?:[sS]|[mM]|[dD]|ll|ve|re)|[A-Za-z]+|\d{1,3}|[^\sA-Za-z0-9]+|\s+",
 )
@@ -88,7 +88,7 @@ def unwrap_usage(blob: Any) -> dict[str, Any]:
 
 
 def context_tokens_from_payload(blob: Any) -> tuple[int | None, str]:
-    """Current context occupancy from a Grok Build payload.
+    """Current context occupancy from a Hermes Agent payload.
 
     Prefers explicit context fields, then `_meta.totalTokens` (live window).
     Turn ledgers with modelCalls > 1 sum every tool-loop prompt and must not
@@ -106,9 +106,9 @@ def context_tokens_from_payload(blob: Any) -> tuple[int | None, str]:
             or src.get("context_window_tokens_used")
         )
         if n is not None:
-            return n, "grok_runtime"
+            return n, "agent_runtime"
     # Billed turn ledgers (input+output, possibly summed across tool-loop
-    # modelCalls) are not the live window. Grok's occupancy is _meta.totalTokens
+    # modelCalls) are not the live window. Hermes's occupancy is _meta.totalTokens
     # / contextTokensUsed, which matches signals.json.
     if is_usage_ledger(inner) or is_usage_ledger(blob):
         return None, ""
@@ -141,7 +141,7 @@ def context_tokens_from_payload(blob: Any) -> tuple[int | None, str]:
         "ThoughtChunk",
     }
     if n is not None and blob.get("streamStartMs") is not None and chunk_like:
-        return n, "grok_runtime"
+        return n, "agent_runtime"
     return None, ""
 
 
@@ -176,7 +176,7 @@ def ledger_stats(blob: Any) -> dict[str, Any]:
 def visible_output_tokens(ledger: dict[str, Any] | None) -> tuple[int | None, str]:
     """Model output tokens for the tok/s meter.
 
-    Prefer Grok's outputTokens. Reasoning is reported separately; subtract it
+    Prefer Hermes's outputTokens. Reasoning is reported separately; subtract it
     so the meter tracks visible completion rather than thought tokens.
     """
     if not ledger:
@@ -188,11 +188,11 @@ def visible_output_tokens(ledger: dict[str, Any] | None) -> tuple[int | None, st
     visible = int(out)
     if reason and 0 < int(reason) < visible:
         visible = visible - int(reason)
-    return max(0, visible), "grok_runtime"
+    return max(0, visible), "agent_runtime"
 
 
 def count_tokens_local(text: str) -> int:
-    """Fallback token count when Grok Build does not report output tokens."""
+    """Fallback token count when Hermes Agent does not report output tokens."""
     s = text or ""
     if not s:
         return 0
@@ -265,7 +265,7 @@ def generation_metrics(
         speed_source = "stream_measurement"
     elif wall_ms is not None:
         gen_ms = wall_ms
-        speed_source = "grok_runtime"
+        speed_source = "agent_runtime"
     elif stream_start_ms is not None and last_out_ms is not None and last_out_ms > stream_start_ms:
         gen_ms = float(last_out_ms) - float(stream_start_ms)
         speed_source = "stream_measurement"

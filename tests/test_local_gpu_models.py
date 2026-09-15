@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -115,9 +116,9 @@ class LocalGpuModelTests(unittest.TestCase):
             "base_url": "http://127.0.0.1:8002/v1",
             "weights": "Llama-70B",
         }
-        grok = {"model": "grok-4.6", "name": "Grok 4.6", "api_backend": "responses"}
+        hermes = {"model": "grok-4.6", "name": "Grok 4.6", "api_backend": "responses"}
         self.assertTrue(d.is_local_gpu_model("llama-70b", llama))
-        self.assertFalse(d.is_local_gpu_model("grok-4.6", grok))
+        self.assertFalse(d.is_local_gpu_model("grok-4.6", hermes))
 
         class _Local:
             model = "qwen38-27b"
@@ -125,7 +126,7 @@ class LocalGpuModelTests(unittest.TestCase):
         class _Cloud:
             model = "grok-4.6"
 
-        catalog = {**CATALOG, "llama-70b": llama, "grok-4.6": grok}
+        catalog = {**CATALOG, "llama-70b": llama, "grok-4.6": hermes}
         with patch.object(d, "load_user_models", return_value=("qwen38-27b", catalog)):
             self.assertTrue(d.uses_short_local_chat(_Local()))
             self.assertFalse(d.uses_short_local_chat(_Cloud()))
@@ -356,8 +357,8 @@ class LocalGpuModelTests(unittest.TestCase):
         weights = home / "models"
         (weights / "NewNet").mkdir(parents=True)
         (weights / "NewNet" / "config.json").write_text("{}", encoding="utf-8")
-        orig_home, orig_models = d.USER_GROK_HOME, d.MODELS_DIR
-        d.USER_GROK_HOME = home
+        orig_home, orig_models = d.USER_AGENT_HOME, d.MODELS_DIR
+        d.USER_AGENT_HOME = home
         d.MODELS_DIR = weights
         try:
             with patch.object(d, "bots", {}):
@@ -393,7 +394,7 @@ class LocalGpuModelTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         d.delete_user_model("grok-4.6")
         finally:
-            d.USER_GROK_HOME = orig_home
+            d.USER_AGENT_HOME = orig_home
             d.MODELS_DIR = orig_models
             tmp.cleanup()
 
@@ -466,7 +467,7 @@ class LocalGpuModelTests(unittest.TestCase):
         self.assertIsNone(d.parse_context_overflow(err))
         details = d.parse_context_overflow_details(err)
         self.assertEqual(details, (32768, 1, 32768))
-        cli = "You are Grok released by xAI.\n" + ("policy line\n" * 200)
+        cli = "You are Hermes released by xAI.\n" + ("policy line\n" * 200)
         body = "You have a body. Call bot_desktop__robot_pose to wave.\n"
         sys_text = cli + "Follow AGENTS.md\n" + body + ("lookbook row\n" * 8000)
         out = d.rewrite_local_llm_chat_payload(
@@ -485,7 +486,7 @@ class LocalGpuModelTests(unittest.TestCase):
         last = out["messages"][-1]["content"]
         self.assertIn("wave", last.lower())
         sys_out = d._flatten_message_text(out["messages"][0])
-        self.assertNotIn("You are Grok released by xAI", sys_out)
+        self.assertNotIn("You are Hermes released by xAI", sys_out)
         self.assertIn("body", sys_out.lower())
 
     def test_fast_local_chat_does_not_cap_completion(self) -> None:
@@ -1079,9 +1080,9 @@ class HostCatalogTests(unittest.TestCase):
                 }
             },
         )
-        text = (home / "config.toml").read_text(encoding="utf-8")
-        self.assertIn("max_completion_tokens = 65536", text)
-        self.assertNotIn("max_completion_tokens = 0", text)
+        text = (home / "config.yaml").read_text(encoding="utf-8")
+        self.assertIn("provider: custom", text)
+        self.assertIn("default: grok-4.6", text)
 
     def test_toml_model_keys_quote_dots(self) -> None:
         self.assertEqual(d.toml_key("qwen38-27b"), "qwen38-27b")
@@ -1104,9 +1105,9 @@ class HostCatalogTests(unittest.TestCase):
         self.assertIn("grok-4.5", ids)
         self.assertTrue(rows[0]["available"])
         self.assertFalse(rows[1]["available"])
-        grok = next(r for r in rows if r["id"] == "grok-4.6")
-        self.assertTrue(grok["available"])
-        self.assertFalse(grok["local"])
+        hermes = next(r for r in rows if r["id"] == "grok-4.6")
+        self.assertTrue(hermes["available"])
+        self.assertFalse(hermes["local"])
 
     def test_host_picker_keeps_config_cloud_grok(self) -> None:
         catalog = {
@@ -1120,9 +1121,9 @@ class HostCatalogTests(unittest.TestCase):
         self.assertIn("qwen38-27b", ids)
         self.assertIn("grok-4.6", ids)
         self.assertIn("grok-4.5", ids)
-        grok = next(r for r in rows if r["id"] == "grok-4.6")
-        self.assertTrue(grok["available"])
-        self.assertFalse(grok["local"])
+        hermes = next(r for r in rows if r["id"] == "grok-4.6")
+        self.assertTrue(hermes["available"])
+        self.assertFalse(hermes["local"])
 
     def test_host_picker_hides_distill_alias(self) -> None:
         catalog = {
@@ -1147,8 +1148,8 @@ class HostCatalogTests(unittest.TestCase):
         ids = [r["id"] for r in rows]
         self.assertIn("grok-4.6", ids)
         self.assertIn("grok-4.5", ids)
-        grok = next(r for r in rows if r["id"] == "grok-4.6")
-        self.assertTrue(grok["available"])
+        hermes = next(r for r in rows if r["id"] == "grok-4.6")
+        self.assertTrue(hermes["available"])
 
     def test_apply_models_drops_acp_cloud_ids(self) -> None:
         bot = d.Bot("b_picker00001", "P", "", "", "qwen38-27b", "x")
@@ -1160,7 +1161,7 @@ class HostCatalogTests(unittest.TestCase):
                         "availableModels": [
                             {"modelId": "grok-4.6", "name": "Grok 4.6"},
                             {"modelId": "grok-4.5", "name": "Grok 4.5"},
-                            {"modelId": "grok-code-fast-1", "name": "Grok Code Fast 1"},
+                            {"modelId": "grok-code-fast-1", "name": "Hermes Code Fast 1"},
                         ],
                     }
                 )
@@ -1323,7 +1324,7 @@ class HostCatalogTests(unittest.TestCase):
         self.assertTrue(by_id["grok-4.6"]["available"])
 
     def test_grok_build_apply_models_keeps_cloud(self) -> None:
-        bot = d.Bot("b_picker00002", "P", "", "", "grok-4.6", "x", kind="grok-build")
+        bot = d.Bot("b_picker00002", "P", "", "", "grok-4.6", "x", kind="hermes")
         with patch.object(d, "load_user_models", return_value=("qwen38-27b", LOCAL_ONLY)):
             with patch.object(d, "probe_local_llm_ids", return_value=("qwen38",)):
                 bot.apply_models(
@@ -1332,7 +1333,7 @@ class HostCatalogTests(unittest.TestCase):
                         "availableModels": [
                             {"modelId": "grok-4.6", "name": "Grok 4.6"},
                             {"modelId": "grok-4.5", "name": "Grok 4.5"},
-                            {"modelId": "grok-code-fast-1", "name": "Grok Code Fast 1"},
+                            {"modelId": "grok-code-fast-1", "name": "Hermes Code Fast 1"},
                         ],
                     }
                 )
@@ -1344,14 +1345,14 @@ class HostCatalogTests(unittest.TestCase):
         self.assertIn("grok-code-fast-1", ids)
 
     def test_grok_build_can_select_cloud_outside_config(self) -> None:
-        bot = d.Bot("b_picker00003", "P", "", "", "qwen38-27b", "x", kind="grok-build")
+        bot = d.Bot("b_picker00003", "P", "", "", "qwen38-27b", "x", kind="hermes")
         with patch.object(d, "load_user_models", return_value=("qwen38-27b", LOCAL_ONLY)):
             d.ensure_model_on_host("grok-code-fast-1", bot=bot)
             d.ensure_model_on_host("grok-4.5", bot=bot)
             d.ensure_model_on_host("grok-4.6", bot=bot)
 
     def test_grok_build_can_select_flash_next_when_down(self) -> None:
-        bot = d.Bot("b_picker00004", "P", "", "", "grok-4.6", "x", kind="grok-build")
+        bot = d.Bot("b_picker00004", "P", "", "", "grok-4.6", "x", kind="hermes")
         catalog = {
             "qwen38-flash-next": {
                 "base_url": "http://127.0.0.1:8080/v1",
@@ -1371,9 +1372,10 @@ class HostCatalogTests(unittest.TestCase):
         weights = models / "tiny"
         weights.mkdir(parents=True)
         (weights / "model.gguf").write_bytes(b"gguf")
-        orig_home, orig_models = d.USER_GROK_HOME, d.MODELS_DIR
-        d.USER_GROK_HOME = home
+        orig_home, orig_models, orig_desk = d.USER_AGENT_HOME, d.MODELS_DIR, os.environ.get("HERMES_DESK_HOME")
+        d.USER_AGENT_HOME = home
         d.MODELS_DIR = models
+        os.environ["HERMES_DESK_HOME"] = str(home)
         try:
             (home / "config.toml").write_text(
                 '[models]\ndefault = "grok-4.6"\n\n[model."grok-4.6"]\nmodel = "grok-4.6"\nname = "Grok 4.6"\n',
@@ -1382,13 +1384,17 @@ class HostCatalogTests(unittest.TestCase):
             with patch.object(d, "refresh_host_model_catalog", return_value=("tiny-model", [{"id": "tiny-model"}])):
                 out = d.register_user_model({"id": "Tiny Model", "weights": str(weights), "name": "Tiny"})
             self.assertEqual(out["id"], "tiny-model")
-            text = (home / "config.toml").read_text(encoding="utf-8")
+            text = (home / "models.json").read_text(encoding="utf-8")
             self.assertIn("tiny-model", text)
             self.assertIn("127.0.0.1:808", text)
             self.assertIn("weights", text)
         finally:
-            d.USER_GROK_HOME = orig_home
+            d.USER_AGENT_HOME = orig_home
             d.MODELS_DIR = orig_models
+            if orig_desk is None:
+                os.environ.pop("HERMES_DESK_HOME", None)
+            else:
+                os.environ["HERMES_DESK_HOME"] = orig_desk
             tmp.cleanup()
 
     def test_stop_flash_next_is_independent(self) -> None:

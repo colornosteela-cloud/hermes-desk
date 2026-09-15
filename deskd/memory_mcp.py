@@ -10,8 +10,8 @@ import urllib.error
 import urllib.request
 
 BOT = ""
-BASE = os.environ.get("GROK_DESK_URL", "http://127.0.0.1:8742")
-TOKEN = os.environ.get("GROK_DESK_TOKEN", "")
+BASE = os.environ.get("HERMES_DESK_URL", "http://127.0.0.1:8742")
+TOKEN = os.environ.get("HERMES_DESK_TOKEN", "")
 
 TOOLS = [
     {

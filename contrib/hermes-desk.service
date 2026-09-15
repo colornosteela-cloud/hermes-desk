@@ -1,0 +1,27 @@
+[Unit]
+Description=Hermes Desk MiniOS (Hermes Agent frontend)
+After=network-online.target teela-qwen38-27b.service
+Wants=network-online.target teela-qwen38-27b.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/hermes-desk
+Environment=HOME=%h
+Environment=HERMES_BIN=%h/.hermes/bin/hermes
+Environment=HERMES_DESK_HOME=%h/.hermes
+Environment=HERMES_DESKS=%h/hermes-desks
+Environment=HERMES_DESK_PORT=8742
+Environment=HERMES_DESK_SANDBOX=off
+Environment=HERMES_DESK_TEELA=%h/teela
+# Renamed from HERMES_DESK_VLLM*; deskd still honors the old names.
+Environment=HERMES_DESK_LLM=http://127.0.0.1:8081
+Environment=HERMES_DESK_MODEL=Qwen3.8-27B
+Environment=HERMES_DESK_MAX_LEN=262144
+Environment=HERMES_DESK_MAX_TOKENS=32768
+Environment=PATH=%h/.hermes/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 %h/hermes-desk/deskd/deskd.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

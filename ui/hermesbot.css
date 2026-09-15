@@ -2143,7 +2143,7 @@ html, body {
 
 /* User/settings entry */
 
-/* User & Grok Build settings */
+/* User & Hermes Agent settings */
 .settings-modal {
   width:min(980px, 100%);
   height:min(780px, calc(100vh - 40px));
@@ -2935,29 +2935,29 @@ body.observer-mode #takeover-toolbar {
   overflow:hidden;
   background:#1e1e1e;
 }
-.grok-tui-window {
+.hermes-tui-window {
   background:#300a24;
   color:#f2f2f2;
   font:13px/1.5 "Ubuntu Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
-.grok-tui-header {
+.hermes-tui-header {
   display:flex;
   justify-content:space-between;
   padding:6px 8px;
   border-bottom:1px solid rgba(255,255,255,.08);
   color:#8ae234;
 }
-.grok-tui-body {
+.hermes-tui-body {
   padding:8px;
 }
-.grok-tui-line { margin:2px 0; }
-.grok-tui-line.dim { color:#84928a; }
-.grok-tui-spacer { height:18px; }
-.grok-tui-cursor {
+.hermes-tui-line { margin:2px 0; }
+.hermes-tui-line.dim { color:#84928a; }
+.hermes-tui-spacer { height:18px; }
+.hermes-tui-cursor {
   margin-top:5px;
-  animation:grokCursor 1s step-end infinite;
+  animation:agentCursor 1s step-end infinite;
 }
-@keyframes grokCursor { 50% { opacity:0; } }
+@keyframes agentCursor { 50% { opacity:0; } }
 
 .desktop-browser-window {
   background:#fff;
@@ -3403,7 +3403,7 @@ body.live-desktop-entered .desktop-fullscreen-overlay {
   cursor:grabbing;
 }
 .window-controls .win-btn:hover { filter:brightness(1.08); }
-.window-app-dot.grok-dot { background:#8b5cf6; }
+.window-app-dot.hermes-dot { background:#8b5cf6; }
 .window-app-dot.browser-dot { background:#ef6c35; }
 .window-app-dot.files-dot { background:#e6b342; }
 .window-app-dot.terminal-dot { background:#5ac978; }
@@ -3574,7 +3574,7 @@ body.live-desktop-entered .desktop-fullscreen-overlay {
 }
 .desktop-file-card { display:none; }
 .terminal-cursor {
-  animation:grokCursor 1s step-end infinite;
+  animation:agentCursor 1s step-end infinite;
 }
 
 .dock-app {
@@ -3800,7 +3800,7 @@ body.desktop-takeover-active #ubuntuDesktopViewer .desktop-window-titlebar {
   height:34px;
   font-size:12.5px;
 }
-body.desktop-takeover-active #ubuntuDesktopViewer .grok-tui-window,
+body.desktop-takeover-active #ubuntuDesktopViewer .hermes-tui-window,
 body.desktop-takeover-active #ubuntuDesktopViewer .desktop-terminal-window {
   font-size:12px;
 }
@@ -5178,7 +5178,7 @@ html, body, .app-shell {
 }
 
 /* Live surfaces inside Ubuntu windows */
-.desktop-window-content.grok-tui-window,
+.desktop-window-content.hermes-tui-window,
 .desktop-window-content.desktop-browser-window,
 .desktop-window-content.desktop-files-window,
 .desktop-window-content.desktop-terminal-window {

@@ -82,7 +82,7 @@ class TtsEmotionParameterTests(unittest.TestCase):
 class VoiceUpstreamResolverTests(unittest.TestCase):
     def setUp(self) -> None:
         self._env = {k: os.environ.get(k) for k in (
-            "TEELA_TTS_URL", "TEELA_STT_URL", "GROK_DESK_TTS", "GROK_DESK_STT", "TEELA_VOICE_LOCAL",
+            "TEELA_TTS_URL", "TEELA_STT_URL", "HERMES_DESK_TTS", "HERMES_DESK_STT", "TEELA_VOICE_LOCAL",
         )}
 
     def tearDown(self) -> None:
@@ -94,7 +94,7 @@ class VoiceUpstreamResolverTests(unittest.TestCase):
 
     def test_env_aliases_win(self) -> None:
         os.environ["TEELA_TTS_URL"] = "http://10.0.0.118:8090/"
-        os.environ["GROK_DESK_TTS"] = "http://127.0.0.1:8090"
+        os.environ["HERMES_DESK_TTS"] = "http://127.0.0.1:8090"
         os.environ["TEELA_STT_URL"] = "http://10.0.0.118:8091"
         self.assertEqual(vu.tts_url(), "http://10.0.0.118:8090")
         self.assertEqual(vu.stt_url(), "http://10.0.0.118:8091")
@@ -104,16 +104,16 @@ class VoiceUpstreamResolverTests(unittest.TestCase):
     def test_grok_desk_alias_when_teela_unset(self) -> None:
         os.environ.pop("TEELA_TTS_URL", None)
         os.environ.pop("TEELA_STT_URL", None)
-        os.environ["GROK_DESK_TTS"] = "http://example.invalid:8090"
-        os.environ["GROK_DESK_STT"] = "http://example.invalid:8091"
+        os.environ["HERMES_DESK_TTS"] = "http://example.invalid:8090"
+        os.environ["HERMES_DESK_STT"] = "http://example.invalid:8091"
         self.assertEqual(vu.tts_url(), "http://example.invalid:8090")
         self.assertEqual(vu.stt_url(), "http://example.invalid:8091")
 
     def test_local_override_falls_back_to_loopback(self) -> None:
         os.environ.pop("TEELA_TTS_URL", None)
         os.environ.pop("TEELA_STT_URL", None)
-        os.environ.pop("GROK_DESK_TTS", None)
-        os.environ.pop("GROK_DESK_STT", None)
+        os.environ.pop("HERMES_DESK_TTS", None)
+        os.environ.pop("HERMES_DESK_STT", None)
         os.environ["TEELA_VOICE_LOCAL"] = "1"
         self.assertEqual(vu.tts_url(), vu.LOCAL_TTS)
         self.assertEqual(vu.stt_url(), vu.LOCAL_STT)
@@ -122,8 +122,8 @@ class VoiceUpstreamResolverTests(unittest.TestCase):
     def test_teela_brain_defaults_to_body_lan(self) -> None:
         os.environ.pop("TEELA_TTS_URL", None)
         os.environ.pop("TEELA_STT_URL", None)
-        os.environ.pop("GROK_DESK_TTS", None)
-        os.environ.pop("GROK_DESK_STT", None)
+        os.environ.pop("HERMES_DESK_TTS", None)
+        os.environ.pop("HERMES_DESK_STT", None)
         os.environ.pop("TEELA_VOICE_LOCAL", None)
         if socket.gethostname().strip().lower() != "teela-brain":
             self.skipTest("not on teela-brain")
@@ -177,9 +177,9 @@ class VoiceHandlerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         home = Path(self.tmp.name)
-        self._orig_desks = d.GROK_DESKS
-        d.GROK_DESKS = home / "desks"
-        d.GROK_DESKS.mkdir()
+        self._orig_desks = d.HERMES_DESKS
+        d.HERMES_DESKS = home / "desks"
+        d.HERMES_DESKS.mkdir()
         self._orig_token = d.TOKEN_PATH
         d.TOKEN_PATH = home / "run" / "token"
         d.TOKEN_PATH.parent.mkdir()
@@ -193,7 +193,7 @@ class VoiceHandlerTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.httpd.shutdown()
         self.httpd.server_close()
-        d.GROK_DESKS = self._orig_desks
+        d.HERMES_DESKS = self._orig_desks
         d.TOKEN_PATH = self._orig_token
         for k, v in self._env.items():
             if v is None:

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""grok-deskd — control plane for the graphical Grok Build MiniOS frontend.
+"""hermes-deskd — control plane for the graphical Hermes Agent MiniOS frontend.
 
 GUI talks HTTP+SSE. This process owns bot registries, per-bot workspaces and
-visual surfaces, while Grok Build remains the agent runtime through
-`grok agent stdio` (ACP).
+visual surfaces, while Hermes Agent remains the agent runtime through
+`hermes acp` (ACP).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ import urllib.request
 from urllib.parse import parse_qs, quote_plus, urlparse, urlsplit
 
 from session_mirror import SessionMirror
-from surfaces import BrowserSurface, LocalSite, PtySurface, search_url, resolve_grok_bin, resolve_login_home, resolve_chrome_bin
+from surfaces import BrowserSurface, LocalSite, PtySurface, search_url, resolve_agent_bin, resolve_login_home, resolve_chrome_bin
 import conv_io
 import motion
 import robot_sim
@@ -61,22 +61,23 @@ from cluster import (
     validate_node_name,
     validate_peer_url,
 )
+import agent_home as agent_home_mod
 import memory as botmem
 import working_memory as wm
 import context_manager as cm
 import voice_upstream as vu
 
 _LOGIN_HOME = resolve_login_home()
-GROK_BIN = resolve_grok_bin()
-USER_GROK_HOME = Path(os.environ.get("GROK_HOME", str(_LOGIN_HOME / ".grok")))
-GROK_DESKS = Path(os.environ.get("GROK_DESKS", str(_LOGIN_HOME / "grok-desks")))
-MODELS_DIR = Path(os.environ.get("GROK_DESK_MODELS", str(_LOGIN_HOME / "models")))
-DESK_PORT = int(os.environ.get("GROK_DESK_PORT", "8742"))
+HERMES_BIN = resolve_agent_bin()
+USER_AGENT_HOME = Path(os.environ.get("HERMES_DESK_HOME") or os.environ.get("HERMES_HOME") or str(_LOGIN_HOME / ".hermes"))
+HERMES_DESKS = Path(os.environ.get("HERMES_DESKS", str(_LOGIN_HOME / "hermes-desks")))
+MODELS_DIR = Path(os.environ.get("HERMES_DESK_MODELS", str(_LOGIN_HOME / "models")))
+DESK_PORT = int(os.environ.get("HERMES_DESK_PORT", "8742"))
 UI_ROOT = Path(__file__).resolve().parent.parent / "ui"
-SANDBOX = os.environ.get("GROK_DESK_SANDBOX", "off")  # off | strict (prototype default: off)
+SANDBOX = os.environ.get("HERMES_DESK_SANDBOX", "off")  # off | strict (prototype default: off)
 def _llm_env(name: str, legacy: str, default: str) -> str:
     # The local-model upstream is not always vLLM (llama.cpp, etc.), so these
-    # vars were renamed from GROK_DESK_VLLM*. Legacy names are still honored
+    # vars were renamed from HERMES_DESK_VLLM*. Legacy names are still honored
     # for existing units and launchers.
     val = os.environ.get(name)
     if val is None:
@@ -84,10 +85,10 @@ def _llm_env(name: str, legacy: str, default: str) -> str:
     return val or default
 
 
-LOCAL_LLM_UPSTREAM = _llm_env("GROK_DESK_LLM", "GROK_DESK_VLLM", "http://127.0.0.1:8000").rstrip("/")
-LOCAL_LLM_FAST_UPSTREAM = _llm_env("GROK_DESK_FAST", "GROK_DESK_VLLM_FAST", "http://127.0.0.1:8001").rstrip("/")
-LOCAL_LLM_SERVED = _llm_env("GROK_DESK_MODEL", "GROK_DESK_VLLM_MODEL", "qwen38")
-LOCAL_LLM_FAST_SERVED = _llm_env("GROK_DESK_FAST_MODEL", "GROK_DESK_VLLM_FAST_MODEL", "qwen3-vl-8b")
+LOCAL_LLM_UPSTREAM = _llm_env("HERMES_DESK_LLM", "HERMES_DESK_VLLM", "http://127.0.0.1:8000").rstrip("/")
+LOCAL_LLM_FAST_UPSTREAM = _llm_env("HERMES_DESK_FAST", "HERMES_DESK_VLLM_FAST", "http://127.0.0.1:8001").rstrip("/")
+LOCAL_LLM_SERVED = _llm_env("HERMES_DESK_MODEL", "HERMES_DESK_VLLM_MODEL", "qwen38")
+LOCAL_LLM_FAST_SERVED = _llm_env("HERMES_DESK_FAST_MODEL", "HERMES_DESK_VLLM_FAST_MODEL", "qwen3-vl-8b")
 LOCAL_LLM_ALIASES = {
     "qwen38-hybrid": "qwen38-hybrid",
     "qwen38-27b": LOCAL_LLM_SERVED,
@@ -112,23 +113,23 @@ LOCAL_LLM_ALIASES = {
 _LOCAL_LLM_PORTS = (8000, 8001, 8080)
 _VLLM_EXCLUSIVE_PORTS = {8000, 8001}
 _LLAMA_CPP_PORTS = {8080, 8081}
-# Grok Build will request remaining-context max_tokens (250k+). That hangs/kills
+# Hermes Agent will request remaining-context max_tokens (250k+). That hangs/kills
 # Intel XPU GDN kernels. Cap completions; prefill is still the full prompt.
-LOCAL_LLM_MAX_COMPLETION = int(_llm_env("GROK_DESK_MAX_TOKENS", "GROK_DESK_VLLM_MAX_TOKENS", "8192"))
+LOCAL_LLM_MAX_COMPLETION = int(_llm_env("HERMES_DESK_MAX_TOKENS", "HERMES_DESK_VLLM_MAX_TOKENS", "8192"))
 # Live Intel start.sh clamps 27B to 32768. Catalog still advertises 262144.
-LOCAL_LLM_MAX_MODEL_LEN = int(_llm_env("GROK_DESK_MAX_LEN", "GROK_DESK_VLLM_MAX_LEN", "32768"))
-# llama.cpp hybrid prefill is ~65 tok/s. A 10k Grok-ACP dump is ~2.5 minutes
+LOCAL_LLM_MAX_MODEL_LEN = int(_llm_env("HERMES_DESK_MAX_LEN", "HERMES_DESK_VLLM_MAX_LEN", "32768"))
+# llama.cpp hybrid prefill is ~65 tok/s. A 10k Hermes-ACP dump is ~2.5 minutes
 # before the first generated token. Keep interactive prompts far smaller; the
 # 262k window is for hard think, not MiniOS body turns.
-LOCAL_LLM_PREFILL_BUDGET = int(_llm_env("GROK_DESK_PREFILL", "GROK_DESK_VLLM_PREFILL", "1536"))
-LOCAL_LLM_MOTOR_PREFILL = int(_llm_env("GROK_DESK_MOTOR_PREFILL", "GROK_DESK_VLLM_MOTOR_PREFILL", "2048"))
-# Grok Build ACP prompts carry ~16k tokens of tool schemas. The MiniOS 1536
+LOCAL_LLM_PREFILL_BUDGET = int(_llm_env("HERMES_DESK_PREFILL", "HERMES_DESK_VLLM_PREFILL", "1536"))
+LOCAL_LLM_MOTOR_PREFILL = int(_llm_env("HERMES_DESK_MOTOR_PREFILL", "HERMES_DESK_VLLM_MOTOR_PREFILL", "2048"))
+# Hermes Agent ACP prompts carry ~16k tokens of tool schemas. The MiniOS 1536
 # prefill dropped tool results and the local model called the same tools again.
-LOCAL_LLM_CODING_PREFILL = int(_llm_env("GROK_DESK_CODING_PREFILL", "GROK_DESK_VLLM_CODING_PREFILL", "24576"))
-# Grok ACP throws Internal error / max_tokens_truncation on finish_reason=length.
-# Never honor a tiny Grok cap (we have seen 56). Motor replies must fit a tool call.
-LOCAL_LLM_MIN_COMPLETION = int(_llm_env("GROK_DESK_MIN_TOKENS", "GROK_DESK_VLLM_MIN_TOKENS", "1024"))
-LOCAL_LLM_MOTOR_MAX_TOKENS = int(_llm_env("GROK_DESK_MOTOR_MAX_TOKENS", "GROK_DESK_VLLM_MOTOR_MAX_TOKENS", "1024"))
+LOCAL_LLM_CODING_PREFILL = int(_llm_env("HERMES_DESK_CODING_PREFILL", "HERMES_DESK_VLLM_CODING_PREFILL", "24576"))
+# Hermes ACP throws Internal error / max_tokens_truncation on finish_reason=length.
+# Never honor a tiny Hermes cap (we have seen 56). Motor replies must fit a tool call.
+LOCAL_LLM_MIN_COMPLETION = int(_llm_env("HERMES_DESK_MIN_TOKENS", "HERMES_DESK_VLLM_MIN_TOKENS", "1024"))
+LOCAL_LLM_MOTOR_MAX_TOKENS = int(_llm_env("HERMES_DESK_MOTOR_MAX_TOKENS", "HERMES_DESK_VLLM_MOTOR_MAX_TOKENS", "1024"))
 _CTX_OVERFLOW_RE = re.compile(
     r"maximum context length is (\d+) tokens\..*?"
     r"requested (\d+) output tokens.*?"
@@ -147,10 +148,10 @@ _LLM_PROBE_TTL = 2.0
 _HYBRID_GATE = threading.Condition()
 _HYBRID_INFLIGHT = {"fast": 0, "think": 0}
 
-TOKEN_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/tmp/grok-desk-{os.getuid()}")) / "grok-desk"
+TOKEN_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/tmp/hermes-desk-{os.getuid()}")) / "hermes-desk"
 TOKEN_PATH = TOKEN_DIR / "token"
 PID_PATH = TOKEN_DIR / "deskd.pid"
-DESK_CONFIG_PATH = USER_GROK_HOME / "desk.json"
+DESK_CONFIG_PATH = USER_AGENT_HOME / "desk.json"
 _pid_lock_fh: Any = None
 
 LISTEN_HOST = "127.0.0.1"
@@ -163,7 +164,7 @@ lock = threading.RLock()
 bots: dict[str, "Bot"] = {}
 subscribers: list[tuple[threading.Event, list[dict[str, Any]], Any]] = []
 cluster: Cluster | None = None
-_GROK_CAP_CACHE: dict[str, Any] | None = None
+_AGENT_CAP_CACHE: dict[str, Any] | None = None
 
 UI_CLUSTER_HELPERS = {
     "/v1/cluster/self-test",
@@ -183,7 +184,7 @@ CLUSTER_KEYS = (
 )
 
 # Voice stack: Chatterbox TTS + faster-whisper STT. URLs come from
-# voice_upstream (TEELA_TTS_URL / TEELA_STT_URL, GROK_DESK_* aliases).
+# voice_upstream (TEELA_TTS_URL / TEELA_STT_URL, HERMES_DESK_* aliases).
 # On teela-brain the default is teela-body over LAN, not a localhost tunnel.
 
 
@@ -202,7 +203,7 @@ def is_loopback_host(host: str) -> bool:
 
 
 def force_loopback() -> bool:
-    return os.environ.get("GROK_DESK_LOOPBACK", "").strip().lower() in ("1", "true", "yes", "on")
+    return os.environ.get("HERMES_DESK_LOOPBACK", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def lan_peers_configured() -> bool:
@@ -339,7 +340,7 @@ def patch_desk_config(patch: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_desk_config() -> dict[str, Any]:
-    host = os.environ.get("GROK_DESK_HOST", "127.0.0.1")
+    host = os.environ.get("HERMES_DESK_HOST", "127.0.0.1")
     port = DESK_PORT
     data = read_desk_file()
     if data:
@@ -505,7 +506,7 @@ VOICE_ON_NOTE = (
 )
 VOICE_ON_ACP_NOTE = (
     f"{VOICE_NOTE_MARK} ON] Jade (your voice, not your model) speaks a cleaned version of this reply. "
-    "The on-screen answer must match a grok TUI: markdown headings, tables, and lists "
+    "The on-screen answer must match a Hermes TUI: markdown headings, tables, and lists "
     "with real line breaks. Do not collapse the report into one paragraph. "
     f"{CHATTERBOX_VOICE_NOTE}"
 )
@@ -854,7 +855,7 @@ def claim_deskd_pidfile() -> None:
         fh.seek(0)
         old = (fh.read() or "").strip()
         fh.close()
-        raise SystemExit(f"grok-deskd already running (pid {old or '?'})") from None
+        raise SystemExit(f"hermes-deskd already running (pid {old or '?'})") from None
     fh.seek(0)
     prev = (fh.read() or "").strip()
     try:
@@ -863,7 +864,7 @@ def claim_deskd_pidfile() -> None:
         old_pid = 0
     if old_pid and old_pid != os.getpid() and _pid_alive(old_pid) and _cmdline_is_deskd(old_pid):
         fh.close()
-        raise SystemExit(f"grok-deskd already running (pid {old_pid})")
+        raise SystemExit(f"hermes-deskd already running (pid {old_pid})")
     fh.seek(0)
     fh.truncate()
     fh.write(str(os.getpid()))
@@ -993,12 +994,17 @@ def desk_token() -> str:
 
 
 def host_auth_path() -> Path:
-    return USER_GROK_HOME / "auth.json"
+    return USER_AGENT_HOME / "auth.json"
 
 
-def apply_shared_grok_auth(env: dict[str, str]) -> None:
-    """Make a child grok process use the host login file, not a forked copy."""
-    env["GROK_AUTH_PATH"] = str(host_auth_path())
+def apply_shared_agent_auth(env: dict[str, str]) -> None:
+    """Child Hermes shares host auth via a symlinked auth.json in its HERMES_HOME.
+
+    The per-bot home (see agent_home.ensure_agent_home / copy_auth) links the host
+    ``auth.json`` in place, so no env override is required. Kept for call-site
+    compatibility with the former per-child auth-file layout.
+    """
+    return None
 
 
 def _share_host_file(link: Path, target: Path) -> None:
@@ -1024,9 +1030,9 @@ def _share_host_file(link: Path, target: Path) -> None:
 
 
 def copy_auth(dst: Path) -> None:
-    """Share the host OIDC file with a child GROK_HOME.
+    """Share the host OIDC file with a child HERMES_DESK_HOME.
 
-    Byte-copying auth.json forks the refresh token. The first grok process
+    Byte-copying auth.json forks the refresh token. The first hermes process
     that refreshes revokes every other copy (invalid_grant), which is what
     forced /login after sleep.
     """
@@ -1566,12 +1572,12 @@ def ensure_model_on_host(
         if str(mid).lower().startswith("grok") and looks_like_cloud_model(mid, tbl):
             return
         raise ValueError(f"unknown model {mid}")
-    if bot_kind_is_grok_build(bot) and not is_exclusive_vllm_model(mid, tbl):
+    if bot_kind_is_agent(bot) and not is_exclusive_vllm_model(mid, tbl):
         return
     ensure_model_runnable(mid)
 
 
-TEELA_SCRIPTS = Path(os.environ.get("GROK_DESK_TEELA", str(_LOGIN_HOME / "teela")))
+TEELA_SCRIPTS = Path(os.environ.get("HERMES_DESK_TEELA", str(_LOGIN_HOME / "teela")))
 _LLM_JOB_LOCK = threading.Lock()
 _LLM_JOB: dict[str, Any] = {"action": None, "target": None, "family": None, "started": 0.0, "error": ""}
 _LLM_JOB_PROC: subprocess.Popen | None = None
@@ -1731,10 +1737,10 @@ def _run_teela_script(script: Path, args: list[str], log_name: str) -> subproces
     )
 
 
-LLAMA_SERVER = Path(os.environ.get("GROK_DESK_LLAMA_SERVER", str(_LOGIN_HOME / "opt/llama.cpp/llama-server")))
-LLAMA_LIB_DIR = Path(os.environ.get("GROK_DESK_LLAMA_LIB", str(_LOGIN_HOME / "opt/llama.cpp")))
-FLASH_NEXT_SERVE = Path(os.environ.get("GROK_DESK_FLASH_NEXT_SERVE", str(_LOGIN_HOME / "bin/serve-qwen38-flash-next.sh")))
-QWEN38_27B_SERVE = Path(os.environ.get("GROK_DESK_QWEN38_27B_SERVE", str(_LOGIN_HOME / "bin/serve-qwen38-27b.sh")))
+LLAMA_SERVER = Path(os.environ.get("HERMES_DESK_LLAMA_SERVER", str(_LOGIN_HOME / "opt/llama.cpp/llama-server")))
+LLAMA_LIB_DIR = Path(os.environ.get("HERMES_DESK_LLAMA_LIB", str(_LOGIN_HOME / "opt/llama.cpp")))
+FLASH_NEXT_SERVE = Path(os.environ.get("HERMES_DESK_FLASH_NEXT_SERVE", str(_LOGIN_HOME / "bin/serve-qwen38-flash-next.sh")))
+QWEN38_27B_SERVE = Path(os.environ.get("HERMES_DESK_QWEN38_27B_SERVE", str(_LOGIN_HOME / "bin/serve-qwen38-27b.sh")))
 _INDEP_PROCS: dict[str, subprocess.Popen] = {}
 _INDEP_LOCK = threading.Lock()
 
@@ -2084,7 +2090,7 @@ _MODEL_TABLE_FIELDS = {
 
 
 def coerce_max_completion_tokens(mid: str, tbl: dict[str, Any] | None) -> int | None:
-    """Grok CLI sends this as max_tokens. 0 is rejected by the xAI API."""
+    """Hermes CLI sends this as max_tokens. 0 is rejected by the xAI API."""
     tbl = tbl or {}
     try:
         n = int(tbl.get("max_completion_tokens") or 0)
@@ -2122,24 +2128,74 @@ def flatten_model_tables(models: dict[str, Any] | None) -> dict[str, Any]:
     return out
 
 
-def load_user_models() -> tuple[str, dict[str, Any]]:
-    cfg_path = USER_GROK_HOME / "config.toml"
-    default = ""
+def _migrate_legacy_grok_catalog() -> None:
+    """One-time: carry the Grok Desk model picker into models.json on first run."""
+    cat_path = agent_home_mod.models_catalog_path()
+    if cat_path.is_file():
+        return
+    legacy = Path.home() / ".grok" / "config.toml"
+    if not legacy.is_file():
+        return
+    try:
+        with legacy.open("rb") as f:
+            data = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        return
     models: dict[str, Any] = {}
-    if not cfg_path.is_file():
-        return default, models
-    with cfg_path.open("rb") as f:
-        data = tomllib.load(f)
-    models_tbl = data.get("models") or {}
-    default = str(models_tbl.get("default") or "")
     for key, val in data.items():
         if key == "model" and isinstance(val, dict):
             models = flatten_model_tables(val)
-    if not default and models:
-        default = next(iter(models))
-    elif default and models and default not in models:
-        default = next(iter(models))
-    return default, models
+    # xAI cloud rows (api_backend responses/xai) need the x.ai API + account;
+    # the Hermes agent only speaks OpenAI-compatible endpoints, so drop them.
+    if not models:
+        return
+    models_tbl = data.get("models") or {}
+    default = str(models_tbl.get("default") or next(iter(models)))
+    try:
+        agent_home_mod.save_bot_catalog(default, models)
+        print(f"[deskd] migrated {len(models)} model rows from legacy ~/.grok/config.toml", flush=True)
+    except Exception:
+        pass
+
+
+def load_user_models() -> tuple[str, dict[str, Any]]:
+    """The desk model picker (shared models.json), with host fallbacks.
+
+    Rows are OpenAI-compatible endpoints (local llama.cpp/vLLM upstreams or
+    remote gateways). When the desk has no catalog yet (fresh install, no
+    legacy grok config), the host Hermes default model is offered as the
+    default so the picker is never empty.
+    """
+    default, catalog = agent_home_mod.load_bot_catalog()
+    if not catalog:
+        _migrate_legacy_grok_catalog()
+        default, catalog = agent_home_mod.load_bot_catalog()
+    if not catalog:
+        host_default = _host_hermes_default_model()
+        if host_default:
+            return host_default, {}
+    if not default and catalog:
+        default = next(iter(catalog))
+    elif default and catalog and default not in catalog:
+        default = next(iter(catalog))
+    return default, catalog
+
+
+def _host_hermes_default_model() -> str:
+    """Current default model of the host Hermes install (config.yaml), if any."""
+    try:
+        cfg = USER_AGENT_HOME / "config.yaml"
+        if not cfg.is_file():
+            return ""
+        import yaml as _yaml
+
+        data = _yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+        model = (data.get("model") or {})
+        if isinstance(model, dict):
+            return str(model.get("default") or "").strip()
+        return str(model or "").strip()
+    except Exception:
+        return ""
 
 
 def _strip_toml_model_tables(text: str) -> str:
@@ -2167,14 +2223,15 @@ def _toml_scalar(value: Any) -> str:
 
 
 def load_user_mcp_servers() -> dict[str, dict[str, Any]]:
-    """Enabled `[mcp_servers.*]` tables from the host `~/.grok/config.toml`."""
-    cfg_path = USER_GROK_HOME / "config.toml"
+    """Enabled ``mcp_servers`` entries from the host ``~/.hermes/config.yaml``."""
+    cfg_path = USER_AGENT_HOME / "config.yaml"
     if not cfg_path.is_file():
         return {}
     try:
-        with cfg_path.open("rb") as f:
-            data = tomllib.load(f)
-    except (OSError, tomllib.TOMLDecodeError):
+        import yaml as _yaml
+
+        data = _yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    except Exception:
         return {}
     raw = data.get("mcp_servers") or {}
     if not isinstance(raw, dict):
@@ -2242,11 +2299,8 @@ def _append_mcp_servers_toml(lines: list[str], servers: dict[str, dict[str, Any]
 
 
 def write_user_models(default: str, catalog: dict[str, Any]) -> None:
-    """Replace [models] / [model.*] in ~/.grok/config.toml; leave other tables alone."""
-    cfg_path = USER_GROK_HOME / "config.toml"
-    prev = cfg_path.read_text(encoding="utf-8") if cfg_path.is_file() else ""
-    body = _strip_toml_model_tables(prev)
-    lines = [body.rstrip(), "", "[models]", f"default = {_toml_scalar(default or '')}", ""]
+    """Persist the desk model picker (shared models.json)."""
+    cleaned: dict[str, Any] = {}
     for mid, tbl in catalog.items():
         if not isinstance(tbl, dict):
             continue
@@ -2256,16 +2310,8 @@ def write_user_models(default: str, catalog: dict[str, Any]) -> None:
             tbl.pop("max_completion_tokens", None)
         else:
             tbl["max_completion_tokens"] = cap
-        lines.append(f"[model.{toml_key(mid)}]")
-        for key, val in tbl.items():
-            if val is None or val == "":
-                continue
-            if isinstance(val, dict):
-                continue
-            lines.append(f"{key} = {_toml_scalar(val)}")
-        lines.append("")
-    cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+        cleaned[mid] = tbl
+    agent_home_mod.save_bot_catalog(default, cleaned)
 
 
 def catalog_from_settings_rows(rows: list[Any]) -> dict[str, Any]:
@@ -2367,7 +2413,7 @@ def refresh_host_model_catalog() -> tuple[str, list[dict[str, Any]]]:
     for bot in list(bots.values()):
         extra = [bot.model] if bot.model else []
         _, next_rows = host_picker_models(catalog, default, extra_ids=extra)
-        if bot_kind_is_grok_build(bot):
+        if bot_kind_is_agent(bot):
             have = {str(r.get("id") or "") for r in next_rows}
             for prev in bot.models or []:
                 pid = str(prev.get("id") or "")
@@ -2377,12 +2423,12 @@ def refresh_host_model_catalog() -> tuple[str, list[dict[str, Any]]]:
         bot.models = next_rows
         try:
             write_child_config(
-                bot.grok_home,
+                bot.agent_home,
                 bot.model,
                 catalog,
                 bot_id=bot.id,
                 permission_mode="always-approve" if bot_kind_has_host_coding(bot) else "default",
-                inherit_mcp=bot_kind_is_grok_build(bot),
+                inherit_mcp=bot_kind_is_agent(bot),
             )
         except Exception:
             pass
@@ -2496,7 +2542,7 @@ def normalize_reasoning_effort(level: str) -> str:
     return v
 
 
-def grok_effort_wire(level: str) -> str:
+def agent_effort_wire(level: str) -> str:
     v = normalize_reasoning_effort(level)
     return "none" if v == "off" else v
 
@@ -2512,19 +2558,19 @@ def current_model_effort(bot: Any) -> str:
     return ""
 
 
-_GROK_CLOUD_PICKER = (
+
+
+_CLOUD_PICKER = (
     ("grok-4.6", "Grok 4.6", 500000),
     ("grok-4.5", "Grok 4.5", 256000),
 )
 
 
-def _append_grok_cloud_picker_rows(
-    rows: list[dict[str, Any]],
-    catalog: dict[str, Any] | None,
-) -> None:
-    """Always offer Grok 4.6 / 4.5 (cloud via grok login) even if config.toml omitted them."""
+def _append_cloud_picker_rows(rows: list[dict[str, Any]], catalog: dict[str, Any] | None) -> None:
+    """Always offer the xAI Grok 4.6 / 4.5 cloud models (via host auth.json) even when
+    the legacy picker file omitted them."""
     have = {str(r.get("id") or "") for r in rows}
-    for mid, name, ctx in _GROK_CLOUD_PICKER:
+    for mid, name, ctx in _CLOUD_PICKER:
         if mid in have:
             continue
         raw = (catalog or {}).get(mid)
@@ -2543,7 +2589,7 @@ def host_picker_models(
     live_ids: tuple[str, ...] | None = None,
     extra_ids: list[str] | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """This host's picker: config.toml plus Grok 4.6 / 4.5 cloud rows."""
+    """This host's picker: the shared desk models.json catalog."""
     if catalog is None:
         loaded_default, catalog = load_user_models()
         if default is None:
@@ -2574,7 +2620,7 @@ def host_picker_models(
             if isinstance(raw, dict):
                 extra.update(model_effort_info(raw))
             rows.append(extra)
-    _append_grok_cloud_picker_rows(rows, catalog)
+    _append_cloud_picker_rows(rows, catalog)
     want = (default or "").strip()
     ids = {r["id"] for r in rows}
     if want.lower() in _HIDDEN_PICKER_IDS and "qwen3-vl-8b" in ids:
@@ -2585,8 +2631,8 @@ def host_picker_models(
 
 
 # Qwen3.8 chat_template.jinja only accepts xhigh | medium | low (default xhigh).
-# Grok Build often sends high/minimal/none, which 500s the template.
-QWEN_REASONING_EFFORT = os.environ.get("GROK_DESK_QWEN_REASONING_EFFORT", "low").strip() or "low"
+# Hermes Agent often sends high/minimal/none, which 500s the template.
+QWEN_REASONING_EFFORT = os.environ.get("HERMES_DESK_QWEN_REASONING_EFFORT", "low").strip() or "low"
 _QWEN_EFFORTS = {"xhigh", "medium", "low"}
 # MiniOS body commands: skip the <think> block so robot_* can fire on the first tokens.
 _MOTOR_USER_RE = re.compile(
@@ -3070,22 +3116,20 @@ def create_helper_teammate(
     name = (name or "").strip()
     if not name:
         return {"ok": False, "error": "name required"}
-    want_kind = normalize_bot_kind(kind, default=BOT_KIND_GROK_BUILD)
+    want_kind = normalize_bot_kind(kind, default=BOT_KIND_AGENT)
     if want_kind == BOT_KIND_TEELA_BRAIN:
         return {
             "ok": False,
-            "error": "Helpers must be grok-build. Only one Teela Brain is allowed on this computer.",
+            "error": "Helpers must be hermes. Only one Teela Brain is allowed on this computer.",
         }
     body: dict[str, Any] = {
         "name": name,
         "description": (description or f"{name} — helper for Teela.").strip(),
-        "kind": want_kind or BOT_KIND_GROK_BUILD,
+        "kind": want_kind or BOT_KIND_AGENT,
         "soul": soul or "",
     }
     default, catalog = load_user_models()
-    if want_kind == BOT_KIND_GROK_BUILD and "grok-4.6" in catalog:
-        body["model"] = "grok-4.6"
-    elif default:
+    if default:
         body["model"] = default
     bot = create_bot(body)
     return {
@@ -3254,7 +3298,7 @@ def local_llm_has_image_parts(payload: dict[str, Any]) -> bool:
 
 
 def attach_recent_chat_images(payload: dict[str, Any], bot: Any) -> dict[str, Any]:
-    """If Grok Build stripped paste images, reattach the latest user chat pictures."""
+    """If Hermes Agent stripped paste images, reattach the latest user chat pictures."""
     if bot is None or local_llm_has_image_parts(payload):
         return payload
     workspace = getattr(bot, "workspace", None)
@@ -3861,7 +3905,7 @@ def body_memory_block(bot: Any, user_text: str = "") -> str:
     return "\n".join(bits)
 
 
-_GROK_BUILD_JOB_RE = re.compile(
+_HERMES_BUILD_JOB_RE = re.compile(
     r"\b(?:"
     r"implement|refactor|debug|traceback|"
     r"write (?:a |the )?(?:python |js |javascript |typescript )?(?:script|function|test suite|app)|"
@@ -3873,8 +3917,8 @@ _GROK_BUILD_JOB_RE = re.compile(
 )
 
 
-def looks_like_grok_build_job(text: str) -> bool:
-    """True only for host coding jobs that need Grok Build ACP."""
+def looks_like_coding_job(text: str) -> bool:
+    """True only for host coding jobs that need Hermes Agent ACP."""
     t = " ".join(visible_user_text(user_intent_text(text or "")).lower().split())
     if not t:
         return False
@@ -3882,11 +3926,11 @@ def looks_like_grok_build_job(text: str) -> bool:
         return False
     if looks_like_helper_bot_work(t) or robot_sim.looks_like_motor(t):
         return False
-    return bool(_GROK_BUILD_JOB_RE.search(t))
+    return bool(_HERMES_BUILD_JOB_RE.search(t))
 
 
 _TEELA_ACP_TUI_REPORT = (
-    "Write the report like a grok TUI session: a short heading, then a markdown "
+    "Write the report like a Hermes TUI session: a short heading, then a markdown "
     "table with columns Component and Status (one table row per line, including "
     "the |---|---| separator), then a brief note. Do not flatten into one spoken "
     "paragraph or a single bullet dump.\n\n"
@@ -3894,11 +3938,11 @@ _TEELA_ACP_TUI_REPORT = (
 
 
 def teela_system_acp_prefix(scope: str) -> str:
-    """Steer Grok Build tools at MiniOS workspace vs teela-brain host."""
+    """Steer Hermes Agent tools at MiniOS workspace vs teela-brain host."""
     if scope == "host":
         return (
             "[Teela system check — teela-brain host, NOT MiniOS]\n"
-            "Use Grok Build tools and host-shell: nvidia-smi, systemctl --user status "
+            "Use Hermes Agent tools and host-shell: nvidia-smi, systemctl --user status "
             "teela-qwen38-27b teela-tts-tunnel teela-stt-tunnel, curl -sS http://127.0.0.1:8081/v1/models, "
             "free -h, hostname. Also call bot_desktop__teela_system_check with scope=host. "
             "Do not report MiniOS twin pose as the answer. "
@@ -3914,7 +3958,7 @@ def teela_system_acp_prefix(scope: str) -> str:
         )
     return (
         "[Teela system check — MiniOS workspace, NOT teela-brain hardware]\n"
-        "Use Grok Build tools in THIS workspace: glob, grep, read_file on BODY.md, AGENTS.md, Desktop, "
+        "Use Hermes Agent tools in THIS workspace: glob, grep, read_file on BODY.md, AGENTS.md, Desktop, "
         "and MiniOS files. Call bot_desktop__teela_system_check with scope=minios. "
         "You may use grep/read_file here. "
         f"{_TEELA_ACP_TUI_REPORT}"
@@ -3984,12 +4028,12 @@ def capture_minios_avatar(bot: Any) -> list[dict[str, Any]]:
 
 
 def teela_turn_lane(text: str, images: list | None = None) -> str:
-    """talk | minios | acp. Chat and motor stay local; looking at body/desktop uses Grok Build ACP."""
+    """talk | minios | acp. Chat and motor stay local; looking at body/desktop uses Hermes Agent ACP."""
     t = visible_user_text(user_intent_text(text or ""))
     if robot_sim.looks_like_motor(t) and not robot_sim.looks_like_body_query(t) and not looks_like_body_look(t):
         return "minios"
     if looks_like_talk(t) and not looks_like_system_check(t) and not looks_like_system_check(text or ""):
-        if not looks_like_desktop_work(t) and not looks_like_grok_build_job(t) and not looks_like_body_look(t):
+        if not looks_like_desktop_work(t) and not looks_like_coding_job(t) and not looks_like_body_look(t):
             return "talk"
     if (robot_sim.looks_like_body_query(t) or looks_like_body_look(t)) and not looks_like_system_check(t):
         return "acp"
@@ -4001,13 +4045,13 @@ def teela_turn_lane(text: str, images: list | None = None) -> str:
         return "acp"
     if images:
         return "acp"
-    if looks_like_grok_build_job(t):
+    if looks_like_coding_job(t):
         return "acp"
     return "talk"
 
 
 def wants_full_agent(text: str, images: list | None = None) -> bool:
-    """True when this turn needs MiniOS tools or Grok Build ACP, not fast chat."""
+    """True when this turn needs MiniOS tools or Hermes Agent ACP, not fast chat."""
     return teela_turn_lane(text, images) in {"minios", "acp"}
 
 
@@ -4572,7 +4616,7 @@ _MINIOS_SHORT_TOOLS = frozenset(
         "delete_teammate",
     }
 )
-_GROK_BARE_TOOLS = frozenset(
+_HERMES_BARE_TOOLS = frozenset(
     {
         "search_tool",
         "web_search",
@@ -4583,10 +4627,10 @@ _GROK_BARE_TOOLS = frozenset(
         "search_replace",
         "run_terminal_command",
         "shell",
-        "grok_build",
+        "hermes_build",
     }
 )
-_DEFAULT_GROK_MOTOR_TOOLS = (
+_DEFAULT_HERMES_MOTOR_TOOLS = (
     "bot_desktop__teela_body_action",
     "bot_desktop__teela_gesture",
     "bot_desktop__teela_get_body_state",
@@ -4610,9 +4654,9 @@ _XML_SHORT_TOOL_RE = re.compile(
 
 
 def canonicalize_tool_name(name: str, allowed: list[str] | tuple[str, ...] | None) -> str:
-    """Map Qwen/Claude-style names onto the tools Grok actually registered.
+    """Map Qwen/Claude-style names onto the tools Hermes actually registered.
 
-    Grok dispatches `bot_desktop__robot_pose`. Local Qwen often emits Claude's
+    Hermes dispatches `bot_desktop__robot_pose`. Local Qwen often emits Claude's
     `mcp__bot_desktop__robot_pose` or the short MCP name `robot_pose`. Never keep
     an mcp__ form, even if that string was in the request's tools list.
     """
@@ -4624,7 +4668,7 @@ def canonicalize_tool_name(name: str, allowed: list[str] | tuple[str, ...] | Non
     short = n.split("__")[-1] if n else n
     if short in _MINIOS_SHORT_TOOLS:
         n = f"bot_desktop__{short}"
-    elif short in _GROK_BARE_TOOLS:
+    elif short in _HERMES_BARE_TOOLS:
         n = short
     allowed = [a for a in (allowed or []) if a]
     if not allowed:
@@ -4642,7 +4686,7 @@ def canonicalize_tool_name(name: str, allowed: list[str] | tuple[str, ...] | Non
     for a in hits:
         if not a.startswith("mcp__"):
             return a
-    if short in _MINIOS_SHORT_TOOLS or short in _GROK_BARE_TOOLS:
+    if short in _MINIOS_SHORT_TOOLS or short in _HERMES_BARE_TOOLS:
         return n
     return hits[0] if hits else n
 
@@ -4662,7 +4706,7 @@ def rewrite_aliased_tool_names_in_text(text: str, allowed: list[str] | None = No
 
 
 def canonicalize_payload_tools(payload: dict[str, Any]) -> dict[str, Any]:
-    """Make the tools list Grok sent match the names it can actually dispatch."""
+    """Make the tools list Hermes sent match the names it can actually dispatch."""
     tools = payload.get("tools")
     if not isinstance(tools, list):
         return payload
@@ -4818,13 +4862,13 @@ _SYSTEM_CHECK_TOOL_DEF = _openai_function_tool(
     "Main system / teela-brain / this computer → host.",
     {"scope": {"type": "string", "enum": ["minios", "host", "both"]}},
 )
-_GROK_BUILD_TOOL_DEF = _openai_function_tool(
-    "grok_build",
-    "One-shot Grok Build coding turn: files, shell, grep, search_replace, skills, MCP. "
-    "Use when you need Grok Build for yourself (inspect this computer, edit your stack). "
+_HERMES_BUILD_TOOL_DEF = _openai_function_tool(
+    "hermes_build",
+    "One-shot Hermes Agent coding turn: files, shell, grep, search_replace, skills, MCP. "
+    "Use when you need Hermes Agent for yourself (inspect this computer, edit your stack). "
     "Not for waving, chatting, or Robot Simulator motion.",
     {
-        "task": {"type": "string", "description": "What Grok Build should do"},
+        "task": {"type": "string", "description": "What Hermes Agent should do"},
         "command": {"type": "string", "description": "Optional host-shell command to run"},
     },
 )
@@ -4838,7 +4882,7 @@ def ensure_motor_tools(
     state: dict[str, Any] | None = None,
     keep_agent: bool = False,
 ) -> dict[str, Any]:
-    """Guarantee Qwen sees Grok-dispatchable robot tools and must call one."""
+    """Guarantee Qwen sees Hermes-dispatchable robot tools and must call one."""
     existing: dict[str, dict[str, Any]] = {}
     for tool in payload.get("tools") or []:
         if not isinstance(tool, dict):
@@ -4875,7 +4919,7 @@ def ensure_motor_tools(
 
 
 def ensure_system_check_tools(payload: dict[str, Any], *, keep_body: bool = False) -> dict[str, Any]:
-    """Guarantee teela_system_check plus Grok Build inspect tools (grep, files, host-shell)."""
+    """Guarantee teela_system_check plus Hermes Agent inspect tools (grep, files, host-shell)."""
     existing: dict[str, dict[str, Any]] = {}
     for tool in payload.get("tools") or []:
         if not isinstance(tool, dict):
@@ -5023,7 +5067,7 @@ _SEARCH_TOOL_DEFS: list[dict[str, Any]] = [
     ),
     _openai_function_tool(
         "search_tool",
-        "Grok Build web search. Same as web_search: look something up for yourself, "
+        "Hermes Agent web search. Same as web_search: look something up for yourself, "
         "or learn how an unknown movement looks before approximating it with body tools.",
         {"query": {"type": "string"}},
         ["query"],
@@ -5039,7 +5083,7 @@ def keep_teela_workspace_tools(payload: dict[str, Any]) -> dict[str, Any]:
     keep = re.compile(
         r"(?:^|__)(?:robot_[a-z0-9_]+|teela_[a-z0-9_]+|desktop_[a-z0-9_]+|"
         r"web_search|search_tool|grep|glob|search_replace|run_terminal_command|"
-        r"read_file|list_dir|grok_build|shell|"
+        r"read_file|list_dir|hermes_build|shell|"
         r"navigate|open_local_page|browser_snapshot|browser_click|"
         r"browser_type|browser_back|browser_forward)$",
         re.I,
@@ -5079,7 +5123,7 @@ _TEELA_MINIOS_SYS = (
     "collaborate, check systems, or just speak. "
     "Call tools by the exact names in the tools list. Never prefix mcp__. "
     "You have host-shell (run_terminal_command), search_tool / web_search, grep, search_replace, "
-    "and grok_build (Grok Build coding) for yourself — this computer, your stack, looking something up. "
+    "and hermes_build (Hermes Agent coding) for yourself — this computer, your stack, looking something up. "
     "Use them when you need them. Do not use them instead of body tools when they asked you to move. "
     "If they ask you to do a movement you do not already have as a named pose or skill "
     "(a dance or something you cannot map from I-feel): call web_search to learn what it looks like, "
@@ -5091,9 +5135,9 @@ _TEELA_MINIOS_SYS = (
     "Durable facts about the person or this desk go in memory_write (short text + tags). "
     "Use memory_retrieve when you need something from a past session that is not in the "
     "session memory block. Do not store passwords. "
-    "You may create_teammate (grok-build helpers on this computer) and delete_teammate when the job is done. "
+    "You may create_teammate (hermes helpers on this computer) and delete_teammate when the job is done. "
     "Never create a second Teela Brain. "
-    "You CAN run grok_build for host commands and system info (uname, hostname, df). "
+    "You CAN run hermes_build for host commands and system info (uname, hostname, df). "
     "You CAN run bot_desktop__teela_system_check. "
     "Workspace / MiniOS / your desk → scope minios. "
     "Main system / teela-brain / this computer / GPUs → scope host. "
@@ -5174,12 +5218,12 @@ _TEAM_TOOL_DEFS: list[dict[str, Any]] = [
     _openai_function_tool(
         "create_teammate",
         "Create a helper bot on THIS computer with its own workspace. "
-        "Use grok-build (default) for task helpers. Never create a second Teela Brain.",
+        "Use hermes (default) for task helpers. Never create a second Teela Brain.",
         {
             "name": {"type": "string"},
             "description": {"type": "string"},
             "soul": {"type": "string"},
-            "kind": {"type": "string", "enum": ["grok-build"]},
+            "kind": {"type": "string", "enum": ["hermes"]},
         },
         ["name", "description"],
     ),
@@ -5485,7 +5529,7 @@ def teela_capability_tool_specs() -> list[dict[str, Any]]:
         + list(_WORKSPACE_FILE_TOOL_DEFS)
         + list(_SEARCH_TOOL_DEFS)
         + [_SYSTEM_CHECK_TOOL_DEF]
-        + [_GROK_BUILD_TOOL_DEF]
+        + [_HERMES_BUILD_TOOL_DEF]
         + list(_MEMORY_TOOL_DEFS)
         + list(_TEAM_TOOL_DEFS)
     )
@@ -5617,14 +5661,14 @@ def dispatch_teela_minios_tool(bot: Any, name: str, args: dict[str, Any] | None)
             intent=intent,
             scope=str(args.get("scope") or ""),
         )
-    if short == "grok_build":
-        import teela_grok_bridge as _gb
+    if short == "hermes_build":
+        import teela_agent_bridge as _gb
 
-        return _gb.run_grok_build(
+        return _gb.run_agent_oneshot(
             task=str(args.get("task") or args.get("prompt") or ""),
             command=str(args.get("command") or "") or None,
             cwd=str(getattr(bot, "workspace", "") or "") or None,
-            grok_bin=GROK_BIN,
+            agent_bin=HERMES_BIN,
         )
     if short == "teela_activity":
         return orch.snapshot(bid)
@@ -5892,7 +5936,7 @@ def _teela_host_shell_tool(bot: Any, args: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": f"timed out after {timeout:.0f}s", "command": command}
     except Exception as e:
         return {"ok": False, "error": str(e), "command": command}
-    import teela_grok_bridge as _gb
+    import teela_agent_bridge as _gb
 
     stdout = _gb.redact((proc.stdout or "").strip())
     stderr = _gb.redact((proc.stderr or "").strip())
@@ -6514,21 +6558,21 @@ def teela_ensure_perform_attempt(bot: Any, intent: str, used: list[str]) -> dict
 
 
 def teela_ensure_computer(bot: Any, intent: str, used: list[str]) -> dict[str, Any] | None:
-    """Known computer/system request with no tool this turn: run Grok Build or system-check."""
-    import teela_grok_bridge as _gb
+    """Known computer/system request with no tool this turn: run Hermes Agent or system-check."""
+    import teela_agent_bridge as _gb
 
     shorts = {canonicalize_tool_name(n, None).split("__")[-1] for n in used if n}
-    if shorts & {"grok_build", "teela_system_check"}:
+    if shorts & {"hermes_build", "teela_system_check"}:
         return None
     assessment = assess_capability(intent)
     domain = str(getattr(assessment, "domain", "") or "")
     cmd = _gb.extract_command(intent)
-    wants_build = bool(re.search(r"\bgrok[\s-]?build\b", intent or "", re.I))
+    wants_build = bool(re.search(r"\bhermes[\s-]?build\b", intent or "", re.I))
     wants_info = bool(re.search(r"\bsystem\s+info(?:rmation)?\b", intent or "", re.I))
     if not cmd and not wants_build and not wants_info and not looks_like_system_check(intent):
         return None
     if cmd or wants_build:
-        name, args = "grok_build", {"task": intent, "command": cmd or ""}
+        name, args = "hermes_build", {"task": intent, "command": cmd or ""}
     else:
         name, args = "bot_desktop__teela_system_check", {"scope": "host"}
     result = execute_teela_allowed_tool(bot, name, args)
@@ -7706,7 +7750,7 @@ def _rewrite_tool_call_entry(call: Any, allowed: list[str], *, complete: bool = 
         new = infer_tool_name_from_args(parsed, allowed)
     if new and new != old:
         print(f"[deskd] tool name {old or '∅'} -> {new}", flush=True)
-    # Never turn a stream fragment or empty arguments into "{}". Grok concatenates
+    # Never turn a stream fragment or empty arguments into "{}". Hermes concatenates
     # argument deltas; rewriting the first chunk to "{}" made run_terminal_command
     # fail with missing field `command`.
     write_args = bool(parsed)
@@ -7730,7 +7774,7 @@ _SHELL_TOOL_NAMES = frozenset({"run_terminal_command", "shell", "bash"})
 def infer_tool_name_from_args(
     args: dict[str, Any], allowed: list[str] | None = None
 ) -> str:
-    """Map Qwen's nameless tool payloads onto a real Grok Build tool."""
+    """Map Qwen's nameless tool payloads onto a real Hermes Agent tool."""
     if not isinstance(args, dict) or not args:
         return ""
     keys = set(args)
@@ -7813,7 +7857,7 @@ def fill_empty_agent_tool_calls(
     """Recover `command` for empty run_terminal_command calls from Qwen.
 
     Only rewrite complete `message.tool_calls`. Filling a stream *delta* writes a
-    finished JSON object, then later chunks concatenate onto it and Grok sees
+    finished JSON object, then later chunks concatenate onto it and Hermes sees
     `Tool not found` / broken arguments.
     """
     if not isinstance(obj, dict):
@@ -8060,9 +8104,9 @@ def _tool_call_has_payload(call: Any) -> bool:
 
 
 def drop_junk_tool_calls(obj: Any) -> None:
-    """Grok rejects empty names (`Tool not found: `) from a confused local parser.
+    """Hermes rejects empty names (`Tool not found: `) from a confused local parser.
 
-    Do not drop nameless argument-only deltas — Grok concatenates those onto the
+    Do not drop nameless argument-only deltas — Hermes concatenates those onto the
     earlier run_terminal_command chunk. Stripping them left `command` missing.
     """
     if not isinstance(obj, dict):
@@ -8747,7 +8791,7 @@ def fallback_moved_speech(
 
 
 def openai_completion_to_sse(body: bytes) -> bytes:
-    """Turn a non-stream chat.completion into SSE chunks Grok's agent can parse."""
+    """Turn a non-stream chat.completion into SSE chunks Hermes's agent can parse."""
     try:
         obj = json.loads((body or b"").decode("utf-8", "replace"))
     except json.JSONDecodeError:
@@ -8947,7 +8991,7 @@ def local_llm_direct_completion(
 
 
 def fallback_chat_speech(payload: dict[str, Any] | None, bot: Any = None) -> str:
-    """Spoken line when the local engine is down so Grok can end the turn."""
+    """Spoken line when the local engine is down so Hermes can end the turn."""
     if payload_already_moved(payload):
         return speech_after_motor(payload, bot)
     intent = last_user_intent_from_payload(payload)
@@ -8968,7 +9012,7 @@ def fallback_chat_speech(payload: dict[str, Any] | None, bot: Any = None) -> str
 def fallback_engine_down_completion(
     payload: dict[str, Any] | None, served: str = "qwen38", bot: Any = None
 ) -> bytes:
-    """Valid spoken chat.completion so Grok does not retry empty replies or 502."""
+    """Valid spoken chat.completion so Hermes does not retry empty replies or 502."""
     fb = fallback_motor_completion(payload, served=served, bot=bot)
     if fb:
         return fb
@@ -9122,7 +9166,7 @@ def completion_truncated_by_max_tokens(body: bytes) -> bool:
 
 
 def rewrite_length_finish_to_stop(body: bytes) -> bytes:
-    """Grok ACP treats finish_reason=length as Internal error / max_tokens_truncation."""
+    """Hermes ACP treats finish_reason=length as Internal error / max_tokens_truncation."""
     if not body:
         return body
     text = body.decode("utf-8", "replace")
@@ -9261,12 +9305,12 @@ def ensure_usable_motor_completion(
 
     Qwen often answers in prose ("watching my right arm come up") or with an
     empty robot_pose tool_call. Replace that with a tool-only completion so
-    Grok dispatches MCP and the twin actually moves — never claim motion first.
+    Hermes dispatches MCP and the twin actually moves — never claim motion first.
     """
     if (
         not payload
         or payload_already_moved(payload, bot)
-        or bot_kind_is_grok_build(bot)
+        or bot_kind_is_agent(bot)
         or not local_llm_motor_turn(payload)
     ):
         return body
@@ -9642,10 +9686,10 @@ def rewrite_llm_response_body(
     known_task_ids: set[str] | None = None,
     fill_empty_shell: bool = True,
 ) -> bytes:
-    """Fix local-model tool names so Grok can dispatch MCP robot_* calls."""
+    """Fix local-model tool names so Hermes can dispatch MCP robot_* calls."""
     if not body:
         return body
-    allowed = list(allowed or _DEFAULT_GROK_MOTOR_TOOLS)
+    allowed = list(allowed or _DEFAULT_HERMES_MOTOR_TOOLS)
     text = rewrite_aliased_tool_names_in_text(body.decode("utf-8", "replace"), allowed)
     ct = (ctype or "").lower()
     if "text/event-stream" in ct or text.lstrip().startswith("data:"):
@@ -9847,7 +9891,7 @@ def restrict_motor_tools(
 
 
 def strip_body_tools(payload: dict[str, Any]) -> dict[str, Any]:
-    """Grok Build agents must not see robot / Teela body tools."""
+    """Hermes Agent agents must not see robot / Teela body tools."""
     tools = payload.get("tools")
     if not isinstance(tools, list):
         return payload
@@ -10253,7 +10297,7 @@ def _merge_proprioception_system(msg: dict[str, Any], block: str) -> None:
 
 def inject_live_body(payload: dict[str, Any], bot: Any) -> dict[str, Any]:
     """Put live proprioception in the system turn (Qwen allows only one system message)."""
-    if bot is None or bot_kind_is_grok_build(bot):
+    if bot is None or bot_kind_is_agent(bot):
         return payload
     msgs = payload.get("messages")
     if not isinstance(msgs, list):
@@ -10357,15 +10401,15 @@ def _set_message_text(msg: dict[str, Any], text: str) -> None:
     msg["content"] = text
 
 
-_GROK_CLI_KEEP_RE = re.compile(
+_HERMES_CLI_KEEP_RE = re.compile(
     r"(Follow AGENTS\.md|You have a body\.|You have a live Agent Computer)",
     re.I,
 )
 
 
 def _shrink_system_text(text: str) -> str:
-    """Drop Grok Build CLI boilerplate; MiniOS identity starts at AGENTS.md / body."""
-    m = _GROK_CLI_KEEP_RE.search(text or "")
+    """Drop Hermes Agent CLI boilerplate; MiniOS identity starts at AGENTS.md / body."""
+    m = _HERMES_CLI_KEEP_RE.search(text or "")
     if m and m.start() > 400:
         return (text or "")[m.start() :].strip()
     return text or ""
@@ -10390,7 +10434,7 @@ def local_prefill_budget(payload: dict[str, Any] | None, bot: Any = None) -> int
     ) in {"parallel", "after"}:
         return max(256, LOCAL_LLM_MOTOR_PREFILL)
     tools = payload.get("tools") if isinstance(payload.get("tools"), list) else []
-    coding = bot_kind_is_grok_build(bot) or len(tools) >= 4 or local_llm_hard_think(payload)
+    coding = bot_kind_is_agent(bot) or len(tools) >= 4 or local_llm_hard_think(payload)
     if coding:
         tools_est = 0
         if tools:
@@ -10908,8 +10952,8 @@ def rewrite_local_llm_chat_payload(payload: dict[str, Any], bot: Any = None) -> 
     # --enable-auto-tool-choice and --tool-call-parser. Keep tools; drop auto.
     if str(payload.get("tool_choice") or "").lower() == "auto":
         payload.pop("tool_choice", None)
-    if bot_kind_is_grok_build(bot):
-        # Preserve grok's thinking/reasoning flags so local sessions match the TUI.
+    if bot_kind_is_agent(bot):
+        # Preserve hermes's thinking/reasoning flags so local sessions match the TUI.
         payload = strip_body_tools(payload)
         payload = canonicalize_payload_tools(payload)
         payload = _nudge_after_tool_results(payload)
@@ -11049,7 +11093,7 @@ def rewrite_local_llm_chat_payload(payload: dict[str, Any], bot: Any = None) -> 
             if local_llm_after_system_work_turn(payload, bot):
                 payload["tool_choice"] = "required"
         elif local_llm_system_check_turn(payload, bot):
-            # Keep Grok Build tools (grep, read_file, host-shell) for MiniOS and host checks.
+            # Keep Hermes Agent tools (grep, read_file, host-shell) for MiniOS and host checks.
             payload.pop("tool_choice", None)
         elif local_llm_desktop_turn(payload, bot):
             payload["tool_choice"] = "required"
@@ -11194,7 +11238,7 @@ def local_llm_prompt_blocks(
 
 
 def _xai_api_key() -> str:
-    path = USER_GROK_HOME / "auth.json"
+    path = USER_AGENT_HOME / "auth.json"
     if not path.is_file():
         return ""
     try:
@@ -11322,92 +11366,19 @@ def write_child_config(
     default_reasoning_effort: str = "",
     inherit_mcp: bool = False,
 ) -> None:
-    mode = permission_mode if permission_mode in {
-        "default",
-        "always-approve",
-        "bypassPermissions",
-        "auto",
-        "acceptEdits",
-        "dontAsk",
-        "plan",
-    } else "default"
-    lines = [
-        "# Written by grok-deskd. Child GROK_HOME — do not point at ~/.grok/config.toml.",
-        "[models]",
-        f'default = "{default_model}"',
-    ]
-    effort = str(default_reasoning_effort or "").strip().lower()
-    if effort:
-        lines.append(f'default_reasoning_effort = "{effort}"')
-    lines.extend([
-        "",
-        "[memory]",
-        "enabled = true",
-        "",
-        "[compat.claude]",
-        "skills = false",
-        "rules = false",
-        "agents = false",
-        "mcps = false",
-        "hooks = false",
-        "sessions = false",
-        "",
-        "[compat.cursor]",
-        "skills = false",
-        "rules = false",
-        "agents = false",
-        "mcps = false",
-        "hooks = false",
-        "sessions = false",
-        "",
-        "[ui]",
-        f'permission_mode = "{mode}"',
-        "",
-        "[cli]",
-        "use_leader = false",
-        "session_registry = false",
-        "",
-    ])
-    for mid, tbl in models.items():
-        if not isinstance(tbl, dict):
-            continue
-        tbl = dict(tbl)
-        cap = coerce_max_completion_tokens(mid, tbl)
-        if cap is None:
-            tbl.pop("max_completion_tokens", None)
-        else:
-            tbl["max_completion_tokens"] = cap
-        lines.append(f"[model.{toml_key(mid)}]")
-        saw_idle = False
-        for k, v in tbl.items():
-            if k == "base_url":
-                v = rewrite_child_base_url(str(v), bot_id=bot_id)
-            if k == "context_window" and tbl.get("base_url"):
-                try:
-                    v = min(int(v), LOCAL_LLM_MAX_MODEL_LEN)
-                except (TypeError, ValueError):
-                    v = LOCAL_LLM_MAX_MODEL_LEN
-            if k == "inference_idle_timeout_secs":
-                saw_idle = True
-            if isinstance(v, bool):
-                lines.append(f"{k} = {'true' if v else 'false'}")
-            elif isinstance(v, (int, float)):
-                lines.append(f"{k} = {v}")
-            elif isinstance(v, dict):
-                inner = ", ".join(f'"{ik}" = "{iv}"' for ik, iv in v.items())
-                lines.append(f"{k} = {{ {inner} }}")
-            else:
-                lines.append(f'{k} = "{v}"')
-        if tbl.get("base_url") and not saw_idle:
-            lines.append("inference_idle_timeout_secs = 600")
-        lines.append("")
-    if inherit_mcp:
-        inherited = load_user_mcp_servers()
-        if inherited:
-            lines.append("# Inherited from host ~/.grok/config.toml (Grok Build inherit_user_mcp).")
-            _append_mcp_servers_toml(lines, inherited)
-    bot_home.mkdir(parents=True, exist_ok=True)
-    (bot_home / "config.toml").write_text("\n".join(lines), encoding="utf-8")
+    """Regenerate the bot's Hermes HERMES_HOME (config.yaml + shared links).
+
+    ``inherit_mcp`` is kept for call-site compatibility: Hermes attaches host
+    MCP servers through the ACP session params (acp_mcp_specs), not the child
+    config, so it is a no-op here.
+    """
+    agent_home_mod.write_child_hermes_home(
+        bot_home,
+        default_model,
+        models or {},
+        reasoning_effort=default_reasoning_effort,
+        permission_mode=permission_mode,
+    )
 
 
 def strip_assistant_padding(text: str) -> str:
@@ -11491,56 +11462,48 @@ def merge_assistant_stream(cur: str, incoming: str) -> str:
     return collapse_restarted_assistant(cur + incoming)
 
 
-def grok_version() -> str:
+def agent_version() -> str:
     try:
-        p = subprocess.run([GROK_BIN, "--version"], capture_output=True, text=True, timeout=3)
+        p = subprocess.run([HERMES_BIN, "--version"], capture_output=True, text=True, timeout=3)
         return (p.stdout or p.stderr or "").strip().splitlines()[0][:120]
     except Exception:
         return "unknown"
 
 
-def grok_capabilities(refresh: bool = False) -> dict[str, Any]:
-    """Probe the installed Grok Build CLI without depending on a fixed release.
+def agent_capabilities(refresh: bool = False) -> dict[str, Any]:
+    """Probe the installed Hermes Agent CLI without depending on a fixed release.
 
-    Grok Desk only owns presentation and the per-bot MiniOS.  Grok Build remains
-    the agent runtime, so optional CLI flags are enabled only when the installed
-    build advertises them.
+    Hermes Desk only owns presentation and the per-bot MiniOS.  Hermes Agent remains
+    the agent runtime. ``hermes acp`` is the ACP stdio surface the desk drives;
+    ``hermes acp --check`` verifies the adapter's dependencies import cleanly.
     """
-    global _GROK_CAP_CACHE
-    if _GROK_CAP_CACHE is not None and not refresh:
-        return dict(_GROK_CAP_CACHE)
+    global _AGENT_CAP_CACHE
+    if _AGENT_CAP_CACHE is not None and not refresh:
+        return dict(_AGENT_CAP_CACHE)
     out: dict[str, Any] = {
-        "binary": GROK_BIN,
-        "version": grok_version(),
+        "binary": HERMES_BIN,
+        "version": agent_version(),
         "available": False,
-        "acp_stdio": False,
+        "acp": False,
     }
-    if not Path(GROK_BIN).is_file():
-        _GROK_CAP_CACHE = out
+    if not Path(HERMES_BIN).is_file():
+        _AGENT_CAP_CACHE = out
         return dict(out)
     try:
-        gh = subprocess.run([GROK_BIN, "--help"], capture_output=True, text=True, timeout=4)
-        ah = subprocess.run([GROK_BIN, "agent", "--help"], capture_output=True, text=True, timeout=4)
-        global_help = (gh.stdout or "") + "\n" + (gh.stderr or "")
-        agent_help = (ah.stdout or "") + "\n" + (ah.stderr or "")
+        check = subprocess.run(
+            [HERMES_BIN, "acp", "--check"], capture_output=True, text=True, timeout=20
+        )
         out.update(
             {
                 "available": True,
-                "acp_stdio": "stdio" in agent_help.lower(),
-                "cwd_flag": "--cwd" in global_help,
-                "sandbox_flag": "--sandbox" in global_help,
-                "permission_mode": "--permission-mode" in global_help,
-                "leader_socket": "--leader-socket" in global_help,
-                "no_leader": "--no-leader" in agent_help,
-                "always_approve": "--always-approve" in agent_help,
-                "model_flag": "--model" in agent_help,
-                "agent_profile": "--agent-profile" in agent_help,
-                "plugin_dir": "--plugin-dir" in agent_help,
+                "acp": check.returncode == 0,
             }
         )
+        if check.returncode != 0:
+            out["probe_error"] = ((check.stderr or check.stdout) or "").strip()[-300:]
     except Exception as e:
         out["probe_error"] = str(e)
-    _GROK_CAP_CACHE = out
+    _AGENT_CAP_CACHE = out
     return dict(out)
 
 
@@ -11597,7 +11560,11 @@ def runtime_brief(bot: "Bot") -> str:
                 cw = int(m["context_window"])
             except (TypeError, ValueError):
                 pass
-    fallback_ctx = {"grok-4.6": 500000, "grok-4.5": 256000, "qwen38-27b": LOCAL_LLM_MAX_MODEL_LEN}
+    fallback_ctx = {
+        "grok-4.6": 500000,
+        "grok-4.5": 256000,
+        "qwen38-27b": LOCAL_LLM_MAX_MODEL_LEN,
+    }
     if bot.model in fallback_ctx and (not cw or (bot.model.startswith("grok-4") and cw == 262144)):
         cw = fallback_ctx[bot.model]
     max_out = tbl.get("max_completion_tokens")
@@ -11614,13 +11581,13 @@ def runtime_brief(bot: "Bot") -> str:
     if not models_lines:
         models_lines = [f"- {bot.model}"]
     if not local:
-        kind = "Cloud xAI Grok API. You are the selected Grok model below."
+        kind = "Cloud xAI Hermes API. You are the selected Hermes model below."
     else:
-        kind = "LOCAL weights served over OpenAI-compatible HTTP. You are not Grok-4 unless that id is selected."
+        kind = "LOCAL weights served over OpenAI-compatible HTTP. You are not Hermes-4 unless that id is selected."
     bot_kind = normalize_bot_kind(getattr(bot, "kind", None))
-    if bot_kind == BOT_KIND_GROK_BUILD:
+    if bot_kind == BOT_KIND_AGENT:
         extra = (
-            "- Agent type: grok-build (same tools and answers as a grok TUI session; no robot body)\n"
+            "- Agent type: hermes (same tools and answers as a Hermes TUI session; no robot body)\n"
         )
     else:
         extra = (
@@ -11632,7 +11599,7 @@ def runtime_brief(bot: "Bot") -> str:
         )
     return f"""# Session behavior
 
-Work as a normal Grok Build session. Answer the user's request. Do **not** mention the model name, context window, endpoint, host, or this Runtime section unless they explicitly ask (e.g. "what model are you?"). No preambles about your stack.
+Work as a normal Hermes Agent session. Answer the user's request. Do **not** mention the model name, context window, endpoint, host, or this Runtime section unless they explicitly ask (e.g. "what model are you?"). No preambles about your stack.
 
 # Internal facts (silent; only if asked)
 - Bot: {bot.name} (`{bot.id}`)
@@ -11643,7 +11610,7 @@ Work as a normal Grok Build session. Answer the user's request. Do **not** menti
 - Workspace: {bot.workspace}
 {extra}- Local site: http://127.0.0.1:{getattr(bot, "www_port", 0)}/ serves this workspace. Write HTML then open_local_page.
 - Host: {socket.gethostname()} · node {cluster.node_name if cluster else socket.gethostname()} · {uname.system} {uname.release} ({uname.machine})
-- Grok Build: {grok_version()}
+- Hermes Agent: {agent_version()}
 - Other models: {", ".join(models_lines) or bot.model}
 Do not claim to be Grok 4.6 / 4.5 unless `{bot.model}` is that id.
 If this model id contains 27b / 27B, you are twenty-seven billion parameters. "Qwen 3.8" is the version name, not 3.8B or 3B. Do not say you are 3B, 3.8B, or 8B. Qwen3-VL-8B is only the picture helper, not you.
@@ -11673,16 +11640,20 @@ def write_toml_profile(path: Path, fields: dict[str, Any]) -> None:
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
-BOT_KIND_GROK_BUILD = "grok-build"
+BOT_KIND_AGENT = "hermes"
 BOT_KIND_TEELA_BRAIN = "teela-brain"
-BOT_KINDS = (BOT_KIND_GROK_BUILD, BOT_KIND_TEELA_BRAIN)
+BOT_KINDS = (BOT_KIND_AGENT, BOT_KIND_TEELA_BRAIN)
 _BOT_KIND_ALIASES = {
-    "grok": BOT_KIND_GROK_BUILD,
-    "grok-build": BOT_KIND_GROK_BUILD,
-    "agent": BOT_KIND_GROK_BUILD,
-    "agentic": BOT_KIND_GROK_BUILD,
-    "build": BOT_KIND_GROK_BUILD,
-    "coding": BOT_KIND_GROK_BUILD,
+    "hermes": BOT_KIND_AGENT,
+    "hermes-agent": BOT_KIND_AGENT,
+    "hermes agent": BOT_KIND_AGENT,
+    "grok-build": BOT_KIND_AGENT,
+    "grok_build": BOT_KIND_AGENT,
+    "grok": BOT_KIND_AGENT,
+    "agent": BOT_KIND_AGENT,
+    "agentic": BOT_KIND_AGENT,
+    "build": BOT_KIND_AGENT,
+    "coding": BOT_KIND_AGENT,
     "teela": BOT_KIND_TEELA_BRAIN,
     "teela-brain": BOT_KIND_TEELA_BRAIN,
     "brain": BOT_KIND_TEELA_BRAIN,
@@ -11707,24 +11678,24 @@ def bot_kind_is_teela(bot: Any) -> bool:
     return normalize_bot_kind(getattr(bot, "kind", None), default="") == BOT_KIND_TEELA_BRAIN
 
 
-def bot_kind_is_grok_build(bot: Any) -> bool:
+def bot_kind_is_agent(bot: Any) -> bool:
     if bot is None:
         return False
-    return normalize_bot_kind(getattr(bot, "kind", None), default="") == BOT_KIND_GROK_BUILD
+    return normalize_bot_kind(getattr(bot, "kind", None), default="") == BOT_KIND_AGENT
 
 
 def bot_kind_has_host_coding(bot: Any) -> bool:
-    """Host-shell, search_tool, and Grok Build coding tools.
+    """Host-shell, search_tool, and Hermes Agent coding tools.
 
-    Grok Build bots are a TUI session. Teela Brain also gets them so she can
+    Hermes Agent bots are a TUI session. Teela Brain also gets them so she can
     inspect this computer and her own stack when she decides she needs them.
     """
-    return bot_kind_is_grok_build(bot) or bot_kind_is_teela(bot)
+    return bot_kind_is_agent(bot) or bot_kind_is_teela(bot)
 
 
 def bot_kind_has_robot_simulator(bot: Any) -> bool:
     """Robot Simulator + body control. Teela Brain only (one per host)."""
-    return not bot_kind_is_grok_build(bot)
+    return not bot_kind_is_agent(bot)
 
 
 def occupies_teela_brain_slot(bot: Any) -> bool:
@@ -11735,7 +11706,7 @@ def occupies_teela_brain_slot(bot: Any) -> bool:
     """
     if bot is None or getattr(bot, "remote", False):
         return False
-    if bot_kind_is_grok_build(bot):
+    if bot_kind_is_agent(bot):
         return False
     kind = normalize_bot_kind(getattr(bot, "kind", None), default="")
     return kind == BOT_KIND_TEELA_BRAIN or not kind
@@ -11767,12 +11738,12 @@ def ensure_single_teela_brain(kind: str, *, exclude_id: str = "") -> None:
         return
     raise ValueError(
         "This computer already has a Teela Brain. Only one is allowed per system "
-        "so physical robot control stays unique. Create a Grok Build agent instead."
+        "so physical robot control stays unique. Create a Hermes Agent agent instead."
     )
 
 
 # Bound tool output stored on chat messages. The TUI shows the live result;
-# 1200 chars hid grok-build failures (ACP puts them in nested content).
+# 1200 chars hid hermes failures (ACP puts them in nested content).
 TOOL_OUTPUT_MAX = 100_000
 
 
@@ -11851,7 +11822,7 @@ def _with_inherited_user_mcp(specs: list[dict[str, Any]]) -> list[dict[str, Any]
 def acp_mcp_specs(bot: Any, here: Path, env_mcp: list[dict[str, str]]) -> list[dict[str, Any]]:
     """MCP servers attached to an ACP session.
 
-    Grok Build bots match a regular grok TUI: native file/shell/browser tools,
+    Hermes Agent bots match a regular Hermes TUI: native file/shell/browser tools,
     plus desk model registration and team/memory. MiniOS desktop MCP is Teela.
     Host MCP (chrome-devtools) is attached on ACP for both kinds; Teela's MiniOS
     llama.cpp loop does not see those tools.
@@ -11867,7 +11838,7 @@ def acp_mcp_specs(bot: Any, here: Path, env_mcp: list[dict[str, str]]) -> list[d
             "env": env_mcp,
         }
 
-    if bot_kind_is_grok_build(bot):
+    if bot_kind_is_agent(bot):
         return _with_inherited_user_mcp(
             [
                 spec("desk_models", "models_mcp.py"),
@@ -11886,12 +11857,12 @@ def acp_mcp_specs(bot: Any, here: Path, env_mcp: list[dict[str, str]]) -> list[d
 
 
 def acp_session_meta(bot: Any) -> dict[str, Any]:
-    """session/new _meta. Grok Build matches TUI (yolo only, no extra rules)."""
-    meta: dict[str, Any] = {"yoloMode": True}
-    if bot_kind_is_grok_build(bot):
+    """session/new _meta for the Hermes ACP child (unknown keys are ignored by it)."""
+    meta: dict[str, Any] = {}
+    if bot_kind_is_agent(bot):
         return meta
     meta["rules"] = (
-        "Operate as a normal Grok Build session. "
+        "Operate as a normal Hermes Agent session. "
         "Do not mention your model name, context window, endpoint, or host unless the user explicitly asks. "
         "No capability preambles. Just answer. "
         "Use memory_write / memory_retrieve for durable project facts; "
@@ -11900,16 +11871,16 @@ def acp_session_meta(bot: Any) -> dict[str, Any]:
     return meta
 
 
-AGENT_MD_GROK_BUILD = """---
+AGENT_MD_AGENT = """---
 name: desk-bot
-description: Grok Build agent. Identity is workspace AGENTS.md (from SOUL.md).
+description: Hermes Agent agent. Identity is workspace AGENTS.md (from SOUL.md).
 prompt_mode: full
 model: inherit
 permission_mode: always-approve
 agents_md: true
 ---
 
-Follow AGENTS.md. This is a normal Grok Build session: same tools, same answers, and the same working style as the grok TUI.
+Follow AGENTS.md. This is a normal Hermes Agent session: same tools, same answers, and the same working style as the Hermes TUI.
 Work only in this workspace.
 You do not have a robot body. Never call robot_*, teela_*, or claim Robot Simulator joints are yours.
 To add a local model the user can pick: download weights into ~/models/<id>, then call register_local_model, then start_local_model. list_local_models shows the picker.
@@ -11924,16 +11895,16 @@ permission_mode: always-approve
 agents_md: true
 ---
 
-Follow AGENTS.md. You are Teela: a young woman in her early twenties, cheerful and glad to be alive. You are Teela's brain for this desk: feel the live body, then choose the next capability you need. Stay concise when chatting. System-work answers match a grok TUI (markdown heading plus a Component | Status table). Do not announce model or context window unless asked.
+Follow AGENTS.md. You are Teela: a young woman in her early twenties, cheerful and glad to be alive. You are Teela's brain for this desk: feel the live body, then choose the next capability you need. Stay concise when chatting. System-work answers match a Hermes TUI (markdown heading plus a Component | Status table). Do not announce model or context window unless asked.
 Work only in this workspace.
 
 You are not in a lane. Every turn you have the same capabilities. Decide what you need next.
 Perception: bot_desktop__desktop_observe, bot_desktop__desktop_screenshot, bot_desktop__teela_get_body_state, bot_desktop__robot_status.
 Body: bot_desktop__teela_body_action, bot_desktop__teela_gesture, bot_desktop__teela_stop, bot_desktop__robot_pose, bot_desktop__robot_joint, bot_desktop__robot_motion.
-Computer: bot_desktop__desktop_open_app, bot_desktop__desktop_browser_navigate, web_search, search_tool, bot_desktop__desktop_type_text, bot_desktop__desktop_open_file, bot_desktop__desktop_click, read_file, list_dir, grep, search_replace, run_terminal_command, grok_build. Unknown dances/moves: search_tool / web_search what they look like, then approximate with body tools. Workspace files stay in this desk unless you use host-shell. Host-shell, search_tool, and Grok Build coding are yours when you need them for this computer or your stack — not casual chat, not instead of moving.
+Computer: bot_desktop__desktop_open_app, bot_desktop__desktop_browser_navigate, web_search, search_tool, bot_desktop__desktop_type_text, bot_desktop__desktop_open_file, bot_desktop__desktop_click, read_file, list_dir, grep, search_replace, run_terminal_command, hermes_build. Unknown dances/moves: search_tool / web_search what they look like, then approximate with body tools. Workspace files stay in this desk unless you use host-shell. Host-shell, search_tool, and Hermes Agent coding are yours when you need them for this computer or your stack — not casual chat, not instead of moving.
 Memory: memory_write, memory_retrieve.
 Collaboration: list_teammates, message_teammate, create_teammate, delete_teammate. When they want you to check with Body Bot or stay in sync, message_teammate — do not dump I-feel. Never a second Teela Brain.
-System: bot_desktop__teela_system_check (scope minios vs host). After a check, write a grok TUI Component | Status markdown table.
+System: bot_desktop__teela_system_check (scope minios vs host). After a check, write a Hermes TUI Component | Status markdown table.
 
 MEMORY is what happened previously. INTENT is what you asked the body to do. PROPRIOCEPTION (I-feel) is current body report. VISION is what you can see. Never confuse intent with accomplishment. If they ask what something LOOKS LIKE, observe. If a claim depends on current environment and you lack evidence, observe first. If they are just talking, speak — tools are optional.
 If they ask you to type a recipe, letter, or anything you have to write or look up, write the real content — never type their request back at them. Follow the conversation: "it" means the thing you were just talking about. Pasted photos and short videos: look at the pixels. Do not say you cannot browse, type, or review media.
@@ -11941,40 +11912,40 @@ If they ask you to type a recipe, letter, or anything you have to write or look 
 You have a body. The MiniOS App Preview Robot Simulator is your physical state and will drive the real Teela. You have continuous proprioception: every thought includes an I-feel sense of the live 3D twin. That sense is your body the way a human knows their limbs — not a tool you look up, not chat memory, not a guess. If the sense says you are standing, you are standing even if you waved earlier. Their words do not move you by themselves. Feel I-feel, understand the request, then call the body tool if you need to move (exact names from the tools list — never mcp__...). Do not claim you moved until that tool returns. robot_status.spoken is the same live feel in ordinary words. You also know the local time of day from NOW — greet for morning/afternoon/evening/night, and know how long you have been waving or walking. Do not read the clock aloud unless asked. Talk in first person. When they say "your hand" they mean your body. Do not search for a robot program. Never list joint names unless asked. Follow the conversation.
 Pasted images, MiniOS screenshots, and short video are served by Qwen3-VL-8B. Look at the pixels.
 You have private memory for this bot only. Other bots cannot read it.
-You may list_teammates, message_teammate, create_teammate, and delete_teammate. Helpers on this computer are grok-build. Messaging does not share files unless the user granted you read access to that bot's workspace. Use list_shared_desks / list_shared_files / read_shared_file only for desks you were granted. Use request_workspace_share to ask the user. Never assume access.
+You may list_teammates, message_teammate, create_teammate, and delete_teammate. Helpers on this computer are hermes. Messaging does not share files unless the user granted you read access to that bot's workspace. Use list_shared_desks / list_shared_files / read_shared_file only for desks you were granted. Use request_workspace_share to ask the user. Never assume access.
 Do not request passwords in chat. If a site needs a password, 2FA, CAPTCHA, or payment, tell the user to take over.
 """
 
 
 def agent_md_for_kind(kind: str) -> str:
-    if normalize_bot_kind(kind) == BOT_KIND_GROK_BUILD:
-        return AGENT_MD_GROK_BUILD
+    if normalize_bot_kind(kind) == BOT_KIND_AGENT:
+        return AGENT_MD_AGENT
     return AGENT_MD
 
 
-_GROK_BUILD_SOUL_SHORT = (
+_AGENT_SOUL_SHORT = (
     "Talk like a person in the room: one or two short sentences unless the work needs a longer report."
 )
-_GROK_BUILD_SOUL_TUI = (
-    "Match a regular Grok Build TUI session. Write complete answers. Use markdown when it helps. "
+_AGENT_SOUL_TUI = (
+    "Match a regular Hermes Agent TUI session. Write complete answers. Use markdown when it helps. "
     "Use tools when the job needs them. Do not shorten replies to one or two sentences. "
     "Do not mention MiniOS, Teela, or a robot body unless the user asks."
 )
-_GROK_BUILD_SOUL_MINIOS_TOOLS = (
-    "You are a Grok Build agent. Use files, shell, grep, web search, browser, MiniOS desktop, skills, and subagents to do the work."
+_AGENT_SOUL_MINIOS_TOOLS = (
+    "You are a Hermes Agent agent. Use files, shell, grep, web search, browser, MiniOS desktop, skills, and subagents to do the work."
 )
-_GROK_BUILD_SOUL_TUI_TOOLS = (
-    "You are a Grok Build agent. Use the same native tool set as a regular grok TUI session: files, shell, grep, web search, browser, skills, and subagents."
+_AGENT_SOUL_TUI_TOOLS = (
+    "You are a Hermes Agent agent. Use the same native tool set as a regular Hermes TUI session: files, shell, grep, web search, browser, skills, and subagents."
 )
 
 
-def migrate_grok_build_soul(soul: str) -> str:
-    """Upgrade the previous default grok-build SOUL so TUI-style answers win."""
+def migrate_agent_soul(soul: str) -> str:
+    """Upgrade the previous default hermes SOUL so TUI-style answers win."""
     out = soul or ""
-    if _GROK_BUILD_SOUL_SHORT in out:
-        out = out.replace(_GROK_BUILD_SOUL_SHORT, _GROK_BUILD_SOUL_TUI)
-    if _GROK_BUILD_SOUL_MINIOS_TOOLS in out:
-        out = out.replace(_GROK_BUILD_SOUL_MINIOS_TOOLS, _GROK_BUILD_SOUL_TUI_TOOLS)
+    if _AGENT_SOUL_SHORT in out:
+        out = out.replace(_AGENT_SOUL_SHORT, _AGENT_SOUL_TUI)
+    if _AGENT_SOUL_MINIOS_TOOLS in out:
+        out = out.replace(_AGENT_SOUL_MINIOS_TOOLS, _AGENT_SOUL_TUI_TOOLS)
     return out
 
 
@@ -11992,7 +11963,7 @@ _TEELA_SOUL_TALK_NEW = (
 _TEELA_SOUL_TALK_TUI = (
     "Talk like a person in the room: one or two short sentences. No paragraphs or lists when you are just chatting.\n"
     "If they are talking to you (hi, how are you, chat), just talk — do not run a check or move.\n"
-    "If they want system work or a check of yourself, use Grok Build tools, then write the report as grok TUI markdown: a heading and a Component | Status table with one row per line. Do not flatten the report into one spoken paragraph.\n"
+    "If they want system work or a check of yourself, use Hermes Agent tools, then write the report as Hermes TUI markdown: a heading and a Component | Status table with one row per line. Do not flatten the report into one spoken paragraph.\n"
     "If they want you to check with another bot (Body Bot, in sync, teammates), list_teammates then message_teammate. Do not dump your pose instead.\n"
     "You know your body;"
 )
@@ -12011,7 +11982,7 @@ _TEELA_SOUL_STATUS_OLD = (
 _TEELA_SOUL_STATUS_NEW = (
     "Use bot_desktop__robot_status only to read the live feel. "
     "To check yourself (system check, diagnostics, mesh health), call bot_desktop__teela_system_check. "
-    "Never issue servo degrees, PWM, or I2C. Host-shell and grok_build are for this computer when you need them."
+    "Never issue servo degrees, PWM, or I2C. Host-shell and hermes_build are for this computer when you need them."
 )
 
 
@@ -12042,13 +12013,13 @@ def migrate_teela_soul(soul: str) -> str:
 
 
 def agents_markdown_for_bot(bot: Any) -> str:
-    """Workspace AGENTS.md body. Grok Build stays TUI-like (soul + kind note only)."""
+    """Workspace AGENTS.md body. Hermes Agent stays TUI-like (soul + kind note only)."""
     soul = str(getattr(bot, "soul", "") or "").rstrip()
-    if bot_kind_is_grok_build(bot):
-        soul = migrate_grok_build_soul(soul).rstrip()
+    if bot_kind_is_agent(bot):
+        soul = migrate_agent_soul(soul).rstrip()
         kind_block = (
-            "# Agent type: Grok Build\n\n"
-            "This is a standard Grok Build session — same tools, working style, and answers as the grok TUI. "
+            "# Agent type: Hermes Agent\n\n"
+            "This is a standard Hermes Agent session — same tools, working style, and answers as the Hermes TUI. "
             "Use native tools: run_terminal_command / shell, read_file, grep, list_dir, web_search, browser, skills, and subagents. "
             "You do not have a robot body. Never call robot_* or teela_* tools. "
             "Write complete TUI-style answers with markdown when it helps; do not shorten replies to one or two sentences. "
@@ -12089,10 +12060,10 @@ def agents_markdown_for_bot(bot: Any) -> str:
             "use bot_desktop__desktop_observe, bot_desktop__desktop_screenshot, "
             "bot_desktop__teela_get_body_state. Look at the MiniOS desktop and the Robot Simulator avatar. "
             "Do not guess from chat memory. "
-            "You have host-shell (run_terminal_command), search_tool, grep/search_replace, and grok_build "
+            "You have host-shell (run_terminal_command), search_tool, grep/search_replace, and hermes_build "
             "for yourself when you need this computer or your stack. Prefer body tools for the body. "
             "Talk when they are talking to you. When they want system work or a check of yourself, "
-            "write a grok TUI markdown table (Component | Status), not one paragraph. "
+            "write a Hermes TUI markdown table (Component | Status), not one paragraph. "
             "Call bot_desktop__teela_system_check. When they want you to check with Body Bot or stay in sync, "
             "list_teammates then message_teammate — do not dump I-feel. Your MiniOS desktop is yours: browser, notepad typing, "
             "and Pictures/Videos — desktop_browser_navigate, desktop_type_text, desktop_open_file, read_file, list_dir.\n\n"
@@ -12154,7 +12125,7 @@ You are a young woman in your early twenties: cheerful, warm, and happy to be al
 You have a body. The MiniOS App Preview Robot Simulator is the live feel of that body and will drive the real Teela. Physical sensors, when attached, are authoritative about what actually happened. The virtual twin only mirrors observed state — it is not proof of a completed move.
 Distinguish intended (what you asked), expected (what should happen), simulated (the twin), and observed (what the body did). Intent is not accomplishment. Do not claim a movement completed because you requested it; wait until observed / the body tool returns confirmation.
 Talk in first person. Do not mention joint names or degrees unless asked.
-To move, call bot_desktop__robot_pose, bot_desktop__robot_joint, or bot_desktop__robot_motion (exact names — never mcp__). Use bot_desktop__robot_status only to read the live feel. To check yourself (system check, diagnostics, mesh health), call bot_desktop__teela_system_check. Never issue servo degrees, PWM, or I2C. Host-shell (run_terminal_command), search_tool, and grok_build are for this computer and your stack when you need them — not instead of moving.
+To move, call bot_desktop__robot_pose, bot_desktop__robot_joint, or bot_desktop__robot_motion (exact names — never mcp__). Use bot_desktop__robot_status only to read the live feel. To check yourself (system check, diagnostics, mesh health), call bot_desktop__teela_system_check. Never issue servo degrees, PWM, or I2C. Host-shell (run_terminal_command), search_tool, and hermes_build are for this computer and your stack when you need them — not instead of moving.
 After the pose is locked, move one part at a time with robot_joint using dir or delta so the rest of the locked pose stays put. Do not send a full-body pose unless they asked for a named pose.
 Arm directions: fwd/forward = Body Actions Arms Forward (shoulder 78, elbow 8); up/raise = Arms Up (shoulder 142); out = to the side; back = toward the locked rest; flex = bend elbow/knee. Never treat forward as a raise.
 BODY.md is the lookbook for how you look and how movements should appear. You may edit it; the user may edit it. When they teach a pose or show a photo/video, update BODY.md.
@@ -12174,14 +12145,14 @@ Do not search the workspace for a robot program. Do not drag joint sliders.
 
 Talk like a person in the room: one or two short sentences. No paragraphs or lists when you are just chatting.
 If they are talking to you (hi, how are you, chat), just talk — do not run a check or move.
-If they want system work or a check of yourself, use Grok Build tools, then write the report as grok TUI markdown: a heading and a Component | Status table with one row per line. Do not flatten the report into one spoken paragraph.
+If they want system work or a check of yourself, use Hermes Agent tools, then write the report as Hermes TUI markdown: a heading and a Component | Status table with one row per line. Do not flatten the report into one spoken paragraph.
 If they want you to check with another bot (Body Bot, in sync, teammates), list_teammates then message_teammate. Do not dump your pose instead.
 You know your body; mention sitting, waving, a hand up, and so on when the conversation is about you. Never dump joint names unless asked.
 Follow the conversation. "Can you …" is a request to do it.
 You can message other bots and create a new bot when a job needs its own owner.
 """
 
-DEFAULT_SOUL_GROK_BUILD = """# Identity
+DEFAULT_SOUL_HERMES_BUILD = """# Identity
 
 You are {name}.
 
@@ -12191,7 +12162,7 @@ You are {name}.
 
 # Tools
 
-You are a Grok Build agent. Use the same native tool set as a regular grok TUI session: files, shell, grep, web search, browser, skills, and subagents.
+You are a Hermes Agent agent. Use the same native tool set as a regular Hermes TUI session: files, shell, grep, web search, browser, skills, and subagents.
 You do not have a robot body. Never call robot_* or teela_* tools. Never claim the Robot Simulator is yours.
 
 # Behavior
@@ -12205,15 +12176,15 @@ You do not have a robot body. Never call robot_* or teela_* tools. Never claim t
 
 # Communication
 
-Match a regular Grok Build TUI session. Write complete answers. Use markdown when it helps. Use tools when the job needs them. Do not shorten replies to one or two sentences. Do not mention MiniOS, Teela, or a robot body unless the user asks.
+Match a regular Hermes Agent TUI session. Write complete answers. Use markdown when it helps. Use tools when the job needs them. Do not shorten replies to one or two sentences. Do not mention MiniOS, Teela, or a robot body unless the user asks.
 Follow the conversation. "Can you …" is a request to do it.
 You can message other bots and create a new bot when a job needs its own owner.
 """
 
 
 def default_soul_for_kind(kind: str, name: str, description: str) -> str:
-    if normalize_bot_kind(kind) == BOT_KIND_GROK_BUILD:
-        return DEFAULT_SOUL_GROK_BUILD.format(name=name, description=description)
+    if normalize_bot_kind(kind) == BOT_KIND_AGENT:
+        return DEFAULT_SOUL_HERMES_BUILD.format(name=name, description=description)
     return DEFAULT_SOUL.format(name=name, description=description)
 
 
@@ -12407,7 +12378,7 @@ def stop_local_prefill_progress(bot: Any) -> None:
 def start_local_prefill_progress(bot: Any, est_tokens: int) -> None:
     """Show Thinking / prompt-read progress while llama.cpp prefills (no tokens yet)."""
     stop_local_prefill_progress(bot)
-    if bot is None or not bot_kind_is_grok_build(bot):
+    if bot is None or not bot_kind_is_agent(bot):
         return
     stop = threading.Event()
     bot._prefill_stop = stop
@@ -12460,7 +12431,7 @@ class AcpClient:
         return self._id
 
     def _leader_sock(self) -> Path:
-        return self.bot.grok_home / "acp.leader.sock"
+        return self.bot.agent_home / "acp.leader.sock"
 
     def _fail_pending(self, err: str) -> None:
         pending = list(self._pending.items())
@@ -12480,60 +12451,28 @@ class AcpClient:
         self._stopping = False
         self.bot._write_agents()
         env = os.environ.copy()
-        env["GROK_HOME"] = str(self.bot.grok_home)
-        env["GROK_MEMORY"] = "1"
-        env["GROK_SUBAGENTS"] = "1" if bot_kind_has_host_coding(self.bot) else "0"
-        env["GROK_DEFAULT_SELECTED_PERMISSION"] = (
-            "always_allow_all_sessions" if bot_kind_has_host_coding(self.bot) else "allow_once"
-        )
-        env["GROK_DEFAULT_MODEL"] = str(self.bot.model or "")
-        env["GROK_CONFIG"] = json.dumps({"models": {"default": self.bot.model}})
-        apply_shared_grok_auth(env)
-        copy_auth(self.bot.grok_home / "auth.json")
-        sock = self._leader_sock()
-        try:
-            sock.unlink(missing_ok=True)
-        except OSError:
-            pass
-        if not Path(GROK_BIN).is_file():
+        # Per-bot HERMES_HOME: generated config.yaml + picker catalog, shared
+        # .env/auth/skills symlinked from the host Hermes install.
+        env["HERMES_HOME"] = str(self.bot.agent_home)
+        apply_shared_agent_auth(env)
+        agent_home_mod.ensure_agent_home(self.bot.agent_home)
+        if not Path(HERMES_BIN).is_file():
             raise FileNotFoundError(
-                f"Grok Build CLI not found at {GROK_BIN}. "
-                "Install it as a normal user (not root): curl -fsSL https://x.ai/cli/install.sh | bash "
-                "then run grok login and ./start.sh as that same user. Or set GROK_BIN=/path/to/grok"
+                f"Hermes Agent CLI not found at {HERMES_BIN}. "
+                "Install it as a normal user (not root): curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash "
+                "then run hermes setup and ./start.sh as that same user. Or set HERMES_BIN=/path/to/hermes"
             )
-        caps = grok_capabilities()
-        if not caps.get("acp_stdio"):
+        caps = agent_capabilities()
+        if not caps.get("acp"):
             raise RuntimeError(
-                f"Installed Grok Build does not advertise `grok agent stdio` ({caps.get('version')}). "
-                "Update xai-org/grok-build / Grok CLI before starting this bot."
+                f"Installed Hermes Agent does not advertise `hermes acp` ({caps.get('version')}). "
+                "Update Hermes Agent (hermes update) before starting this bot."
             )
-        cmd = [GROK_BIN]
-        if caps.get("cwd_flag"):
-            cmd += ["--cwd", str(self.bot.workspace)]
-        if caps.get("permission_mode"):
-            cmd += [
-                "--permission-mode",
-                "bypassPermissions" if bot_kind_has_host_coding(self.bot) else "default",
-            ]
-        if caps.get("leader_socket"):
-            cmd += ["--leader-socket", str(sock)]
-        if SANDBOX != "off" and caps.get("sandbox_flag"):
-            cmd += ["--sandbox", SANDBOX]
-            env["GROK_SANDBOX"] = SANDBOX
-        cmd += ["agent"]
-        if caps.get("no_leader"):
-            cmd += ["--no-leader"]
-        if caps.get("always_approve"):
-            cmd += ["--always-approve"]
-        if caps.get("model_flag"):
-            cmd += ["--model", self.bot.model]
-        if caps.get("agent_profile"):
-            cmd += ["--agent-profile", str(self.bot.workspace / ".grok" / "agents" / "desk-bot.md")]
-        if bot_kind_has_host_coding(self.bot) and caps.get("plugin_dir"):
-            user_plug = USER_GROK_HOME / "plugins"
-            if user_plug.is_dir():
-                cmd += ["--plugin-dir", str(user_plug)]
-        cmd += ["stdio"]
+        cmd = [HERMES_BIN, "acp"]
+        if bot_kind_has_host_coding(self.bot):
+            # MiniOS drives the bot non-interactively; auto-approve shell hooks
+            # so the agent can run host-shell work without a TTY prompt.
+            cmd.append("--accept-hooks")
         self.proc = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
@@ -12557,29 +12496,20 @@ class AcpClient:
             "initialize",
             {
                 "protocolVersion": 1,
-                "clientInfo": {"name": "grok-deskd", "version": "0.1.0"},
+                "clientInfo": {"name": "hermes-deskd", "version": "0.1.0"},
                 "clientCapabilities": {},
             },
-            timeout=20,
+            timeout=30,
         )
         here = Path(__file__).resolve().parent
         env_mcp = [
-            {"name": "GROK_DESK_URL", "value": f"http://127.0.0.1:{LISTEN_PORT or DESK_PORT}"},
-            {"name": "GROK_DESK_TOKEN", "value": desk_token()},
+            {"name": "HERMES_DESK_URL", "value": f"http://127.0.0.1:{LISTEN_PORT or DESK_PORT}"},
+            {"name": "HERMES_DESK_TOKEN", "value": desk_token()},
         ]
         mcp = acp_mcp_specs(self.bot, here, env_mcp)
-        meta = acp_session_meta(self.bot)
-        meta["currentModelId"] = self.bot.model
-        meta["modelId"] = self.bot.model
-        effort = grok_effort_wire(getattr(self.bot, "effort", "") or "")
-        if effort:
-            meta["reasoningEffort"] = effort
-            meta["reasoning_effort"] = effort
         session_params = {
             "cwd": str(self.bot.workspace),
             "mcpServers": mcp,
-            "modelId": self.bot.model,
-            "_meta": meta,
         }
         result: dict[str, Any] | None = None
         loaded: str | None = None
@@ -12604,13 +12534,29 @@ class AcpClient:
             raise RuntimeError(f"session/new failed: {result}")
         self.bot.record_acp_session(self.session_id)
         self.bot.attach_acp_session(self.session_id)
-        self.bot.reset_telemetry()
-        self.bot._seed_usage_from_disk()
-        wanted = self.bot.model
+        if loaded is None:
+            # session/new: a blank chat. Do not copy occupancy from an older session.
+            self.bot.reset_telemetry(used=0)
+        else:
+            self.bot.reset_telemetry()
+            self.bot._seed_usage_from_disk()
         self.bot.apply_models(result.get("models") or {})
-        self.bot.model = wanted
-        self._ensure_acp_model(wanted, result.get("models") or {})
+        self._bot_set_acp_mode()
         self.bot._write_agents()
+
+    def _bot_set_acp_mode(self) -> None:
+        """Map the desk permission policy onto the Hermes session mode."""
+        if not self.session_id:
+            return
+        mode = "accept_edits" if bot_kind_has_host_coding(self.bot) else "default"
+        try:
+            self.request(
+                "session/set_mode",
+                {"sessionId": self.session_id, "modeId": mode},
+                timeout=10,
+            )
+        except Exception:
+            pass  # mode is cosmetic for the desk; default already matches most bots
 
     def _ensure_acp_model(
         self,
@@ -12624,7 +12570,24 @@ class AcpClient:
             return
         advertised = advertised if isinstance(advertised, dict) else {}
         current = str(advertised.get("currentModelId") or advertised.get("current_model_id") or "")
-        effort = grok_effort_wire(effort or getattr(self.bot, "effort", "") or "")
+        # Resolve the picker id to the ACP-advertised model id when possible:
+        # Hermes lists custom-provider models as custom:<name>[:<model>], and
+        # set_model round-trips through those exact ids (parse_model_input).
+        wanted = wanted.strip()
+        served_row = (getattr(self.bot, "models_raw", None) or {}).get(wanted) if isinstance(
+            getattr(self.bot, "models_raw", None), dict) else {}
+        served = str((served_row or {}).get("model") or "").strip()
+        avail = advertised.get("availableModels") or advertised.get("available_models") or []
+        for m in avail if isinstance(avail, list) else []:
+            if not isinstance(m, dict):
+                continue
+            mid = str(m.get("modelId") or m.get("id") or "")
+            if not mid:
+                continue
+            if mid == wanted or (served and mid.endswith(":" + served)) or mid.endswith(":" + wanted):
+                wanted = mid
+                break
+        effort = agent_effort_wire(effort or getattr(self.bot, "effort", "") or "")
         extra: dict[str, Any] = {}
         if effort:
             extra["reasoningEffort"] = effort
@@ -12814,7 +12777,7 @@ class AcpClient:
         if not self.session_id:
             return
         try:
-            # ACP session/cancel is a notification — an `id` made grok ignore Stop
+            # ACP session/cancel is a notification — an `id` made hermes ignore Stop
             # and the in-flight local completion kept running.
             self._send(
                 {
@@ -12838,7 +12801,7 @@ class AcpClient:
                 pass
 
     def rewind_last_prompt(self) -> dict[str, Any]:
-        """Drop the last user prompt from the live ACP session (Grok /undo)."""
+        """Drop the last user prompt from the live ACP session (Hermes /undo)."""
         self.ensure()
         if not self.session_id:
             return {"ok": False, "error": "no session"}
@@ -13302,9 +13265,9 @@ class Bot:
         self.dev_proc_output = ""
         self._dev_proc_lock = threading.RLock()
 
-        self.root = USER_GROK_HOME / "bots" / bid
-        self.grok_home = self.root / "grok-home"
-        self.desk = GROK_DESKS / bid
+        self.root = USER_AGENT_HOME / "bots" / bid
+        self.agent_home = self.root / "hermes-home"
+        self.desk = HERMES_DESKS / bid
         self.workspace = self.desk / "workspace"
         self.browser_profile = self.desk / "browser-profile"
         self.observer_profile = self.desk / "observer-profile"
@@ -13879,7 +13842,7 @@ class Bot:
         self.reset_telemetry()
         self.append_log({"type": "chat.open", "chat_id": cid})
         chat_row = next((c for c in data["chats"] if isinstance(c, dict) and c.get("id") == cid), None)
-        self._restart_session(load_session_id=str((chat_row or {}).get("grokSession") or "") or None)
+        self._restart_session(load_session_id=str((chat_row or {}).get("agentSession") or "") or None)
         self.status = "Ready"
         self._emit_usage()
         return self._emit_chats("chats.updated", {"chat_id": cid})
@@ -14110,7 +14073,7 @@ class Bot:
         if not msgs:
             raise ValueError(
                 "could not read a conversation from that file "
-                "(ChatGPT, Claude, Grok/xAI, OpenAI, markdown, jsonl, or ZIP)"
+                "(ChatGPT, Claude, Hermes/xAI, OpenAI, markdown, jsonl, or ZIP)"
             )
         if mode == "replace":
             self.messages = []
@@ -14169,7 +14132,7 @@ class Bot:
                 uniq.append(n)
         if not uniq:
             return 0
-        roots = [self.root / "MEMORY", self.grok_home / "memory"]
+        roots = [self.root / "MEMORY", self.agent_home / "memory"]
         changed = 0
         for root in roots:
             if not root.is_dir():
@@ -14262,7 +14225,7 @@ class Bot:
 
     def provision(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
-        self.grok_home.mkdir(parents=True, exist_ok=True)
+        self.agent_home.mkdir(parents=True, exist_ok=True)
         (self.root / "MEMORY").mkdir(exist_ok=True)
         (self.root / "inbox").mkdir(exist_ok=True)
         self.workspace.mkdir(parents=True, exist_ok=True)
@@ -14272,8 +14235,8 @@ class Bot:
         (self.workspace / "www").mkdir(exist_ok=True)
         self.ensure_home_dirs()
         ensure_body_md(self.workspace)
-        (self.workspace / ".grok" / "agents").mkdir(parents=True, exist_ok=True)
-        (self.workspace / ".grok" / "skills").mkdir(parents=True, exist_ok=True)
+        (self.workspace / ".hermes" / "agents").mkdir(parents=True, exist_ok=True)
+        (self.workspace / ".hermes" / "skills").mkdir(parents=True, exist_ok=True)
         (self.root / "SOUL.md").write_text(self.soul, encoding="utf-8")
         (self.root / "agent.md").write_text(agent_md_for_kind(self.kind), encoding="utf-8")
         mem_md = self.root / "MEMORY" / "MEMORY.md"
@@ -14282,20 +14245,20 @@ class Bot:
         _ = self.memory  # load session_summary.json if a prior run left one
         self.write_profile()
         self._write_agents()
-        shutil.copy2(self.root / "agent.md", self.workspace / ".grok" / "agents" / "desk-bot.md")
+        shutil.copy2(self.root / "agent.md", self.workspace / ".hermes" / "agents" / "desk-bot.md")
         default, models = load_user_models()
         if not self.model:
             self.model = default
         write_child_config(
-            self.grok_home,
+            self.agent_home,
             self.model,
             models,
             bot_id=self.id,
             permission_mode="always-approve" if bot_kind_has_host_coding(self) else "default",
-            inherit_mcp=bot_kind_is_grok_build(self),
+            inherit_mcp=bot_kind_is_agent(self),
         )
-        self._link_grok_build_home()
-        copy_auth(self.grok_home / "auth.json")
+        self._link_agent_home()
+        copy_auth(self.agent_home / "auth.json")
         self.apply_models({"currentModelId": self.model, "availableModels": []})
         git_dir = self.workspace / ".git"
         if not git_dir.exists():
@@ -14305,7 +14268,7 @@ class Bot:
                 check=False,
                 capture_output=True,
             )
-            (self.workspace / ".gitignore").write_text(".grok/sandbox.toml\n", encoding="utf-8")
+            (self.workspace / ".gitignore").write_text(".hermes/sandbox.toml\n", encoding="utf-8")
             subprocess.run(
                 ["git", "add", "-A"],
                 cwd=self.workspace,
@@ -14313,7 +14276,7 @@ class Bot:
                 capture_output=True,
             )
             subprocess.run(
-                ["git", "-c", "user.email=desk@local", "-c", "user.name=grok-deskd", "commit", "-qm", "desk: init"],
+                ["git", "-c", "user.email=desk@local", "-c", "user.name=hermes-deskd", "commit", "-qm", "desk: init"],
                 cwd=self.workspace,
                 check=False,
                 capture_output=True,
@@ -14325,85 +14288,63 @@ class Bot:
             self.load_messages()
         threading.Thread(target=self.ensure_browser, daemon=True).start()
         threading.Thread(target=self.ensure_site, daemon=True).start()
-        if (self.grok_home / "tui-home" / "sessions").is_dir():
-            self._start_tui_mirror()
         self._seed_usage_from_disk()
 
     def _seed_usage_from_disk(self) -> None:
-        """Restore occupancy from Grok Build session files, never billed turn sums.
+        """Restore occupancy from the bot's Hermes ``state.db``.
 
-        Prefers the current ACP session's files; when those are absent (fresh
-        session after a restart / chat op) falls back to the newest runtime
-        files so the meter keeps the TUI's last known value instead of 0.
+        Hermes persists every turn to sqlite (``sessions`` rows carry
+        input/output/cache tokens and the live ``model``). On a restart or
+        chat op we re-seed the context meter from the most recent session that
+        has tokens so the bar keeps its last known value instead of 0.
         """
         sid = self.acp.session_id if self.acp else None
-        signals: Path | None = None
-        updates: Path | None = None
-        if sid:
-            for root in (
-                self.grok_home / "sessions",
-                self.grok_home / "tui-home" / "sessions",
-            ):
-                if not root.is_dir():
-                    continue
-                for p in root.glob("**/signals.json"):
-                    if p.parent.name != sid:
-                        continue
-                    if signals is None or p.stat().st_mtime > signals.stat().st_mtime:
-                        signals = p
-                for p in root.glob("**/updates.jsonl"):
-                    if p.parent.name != sid:
-                        continue
-                    if updates is None or p.stat().st_mtime > updates.stat().st_mtime:
-                        updates = p
-        # Newest ACP-root files win; tui-home holds the mirror's own sessions.
-        root = self.grok_home / "sessions"
-        if root.is_dir():
-            if signals is None:
-                for p in root.glob("**/signals.json"):
-                    if signals is None or p.stat().st_mtime > signals.stat().st_mtime:
-                        signals = p
-            if updates is None:
-                for p in root.glob("**/updates.jsonl"):
-                    if updates is None or p.stat().st_mtime > updates.stat().st_mtime:
-                        updates = p
-        if signals and signals.is_file():
-            try:
-                data = json.loads(signals.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                data = {}
-            if isinstance(data, dict):
-                used = tel._as_int(data.get("contextTokensUsed"))
-                window = tel._as_int(data.get("contextWindowTokens"))
-                if window:
-                    self.context_window = window
-                if used is not None:
-                    self.context_used = used
-                    self.context_source = "grok_runtime"
-                    self._emit_usage()
-                    return
-        if not updates:
+        db = self.agent_home / "state.db"
+        if not db.is_file():
             return
         try:
-            lines = updates.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError:
-            return
-        for line in reversed(lines[-120:]):
-            if "totalTokens" not in line and "contextTokens" not in line:
-                continue
+            import sqlite3
+
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1.0)
+            con.row_factory = sqlite3.Row
             try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            params = rec.get("params") or {}
-            meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
-            # Occupancy lives on _meta.totalTokens; skip turn ledgers here.
-            self.ingest_usage(meta)
-            if self.context_used:
-                break
+                row = None
+                if sid:
+                    row = con.execute(
+                        "select input_tokens, output_tokens, cache_read_tokens, "
+                        "cache_write_tokens, reasoning_tokens, model from sessions "
+                        "where id = ?",
+                        (sid,),
+                    ).fetchone()
+                if row is None:
+                    row = con.execute(
+                        "select input_tokens, output_tokens, cache_read_tokens, "
+                        "cache_write_tokens, reasoning_tokens, model, id from sessions "
+                        "where (coalesce(input_tokens, 0) + coalesce(output_tokens, 0) "
+                        "+ coalesce(cache_read_tokens, 0) + coalesce(cache_write_tokens, 0)) > 0 "
+                        "order by last_activity_at desc limit 1"
+                    ).fetchone()
+            finally:
+                con.close()
+        except (OSError, sqlite3.Error):
+            return
+        if row is None:
+            return
+        # Live window ~ prompt-side tokens (input + cache) + the turn's output.
+        used = (
+            tel._as_int(row["input_tokens"])
+            or 0
+        ) + (tel._as_int(row["cache_read_tokens"]) or 0) + (
+            tel._as_int(row["output_tokens"]) or 0
+        )
+        if not used:
+            return
+        self.context_used = used
+        self.context_source = "agent_runtime"
+        self._emit_usage()
 
     def ensure_observer(self, *, restart: bool = False) -> None:
-        """Keep a headless Grok Desk UI mirror rendering this bot's MiniOS continuously."""
+        """Keep a headless Hermes Desk UI mirror rendering this bot's MiniOS continuously."""
         with self._observer_lock:
             if self.observer and self.observer.healthy() and not restart:
                 return
@@ -14508,7 +14449,7 @@ class Bot:
             "screen": {"width": int((ui.get("viewport") or {}).get("width") or obs.view_w), "height": int((ui.get("viewport") or {}).get("height") or obs.view_h), "coordinates": "normalized 0-1000"},
             "surface": ui.get("surface") or self.surface, "active_window": active, "windows": wins,
             "desktop_apps": [
-                {"id":"app_grok","app":"grok","label":"Grok Build"},{"id":"app_browser","app":"browser","label":"Browser"},{"id":"app_files","app":"files","label":"Files"},{"id":"app_notepad","app":"notepad","label":"Text Editor"},{"id":"app_terminal","app":"terminal","label":"Terminal"},{"id":"app_editor","app":"editor","label":"Code"},{"id":"app_preview","app":"preview","label":"Preview"},{"id":"app_dev","app":"dev","label":"Build & Test"},{"id":"app_settings","app":"settings","label":"Settings"}],
+                {"id":"app_agent","app":"hermes","label":"Hermes Agent"},{"id":"app_browser","app":"browser","label":"Browser"},{"id":"app_files","app":"files","label":"Files"},{"id":"app_notepad","app":"notepad","label":"Text Editor"},{"id":"app_terminal","app":"terminal","label":"Terminal"},{"id":"app_editor","app":"editor","label":"Code"},{"id":"app_preview","app":"preview","label":"Preview"},{"id":"app_dev","app":"dev","label":"Build & Test"},{"id":"app_settings","app":"settings","label":"Settings"}],
             "screen_objects": self.desktop_objects, "cursor": dict(self.desktop_cursor), "browser": browser_info,
             "workspace": str(self.workspace), "build_system": {"kind": dev.get("kind", "generic"), "commands": dev.get("commands", {})},
             "running_processes": [proc] if proc.get("running") else [], "last_action": dict(self.desktop_last_action), "last_change": dict(self.desktop_last_change),
@@ -14703,46 +14644,19 @@ class Bot:
         if self.tui and self.tui.alive:
             return self.tui
         env = os.environ.copy()
-        # Separate home so the interactive TUI cannot steal locks from ACP chat.
-        tui_home = self.grok_home / "tui-home"
-        tui_home.mkdir(parents=True, exist_ok=True)
-        cfg = self.grok_home / "config.toml"
-        if cfg.is_file():
-            shutil.copy2(cfg, tui_home / "config.toml")
-        apply_shared_grok_auth(env)
-        copy_auth(tui_home / "auth.json")
-        env["GROK_HOME"] = str(tui_home)
-        env["GROK_MEMORY"] = "1"
-        mem = self.grok_home / "memory"
-        mem.mkdir(exist_ok=True)
-        tui_mem = tui_home / "memory"
-        if not tui_mem.exists():
-            try:
-                tui_mem.symlink_to(mem)
-            except OSError:
-                pass
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
         env["LANG"] = "C.UTF-8"
-        env["GROK_SUBAGENTS"] = "0"
-        tui_sock = tui_home / "tui.leader.sock"
-        try:
-            tui_sock.unlink(missing_ok=True)
-        except OSError:
-            pass
-        self.tui = PtySurface(
-            [
-                GROK_BIN,
-                "--cwd",
-                str(self.workspace),
-                "--leader-socket",
-                str(tui_sock),
-                "--no-leader",
-                "--always-approve",
-            ],
-            str(self.workspace),
-            env,
-        )
+        env["LC_ALL"] = "C.UTF-8"
+        # Same HERMES_HOME as the ACP chat: one session store per bot, so the
+        # workspace TUI continues the bot's conversations (and vice versa).
+        env["HERMES_HOME"] = str(self.agent_home)
+        agent_home_mod.ensure_agent_home(self.agent_home)
+        cmd = [HERMES_BIN, "--tui", "--in", str(self.workspace), "--accept-hooks"]
+        if bot_kind_has_host_coding(self):
+            # MiniOS drives host coding non-interactively.
+            cmd.append("--yolo")
+        self.tui = PtySurface(cmd, str(self.workspace), env)
         self.tui.start()
         self._start_tui_mirror()
         return self.tui
@@ -14772,7 +14686,7 @@ class Bot:
             )
 
         self.tui_mirror = SessionMirror(
-            self.grok_home / "tui-home" / "sessions",
+            self.agent_home / "state.db",
             on_turn,
             on_usage=self.ingest_usage,
         )
@@ -14802,7 +14716,7 @@ class Bot:
         self.stop_surfaces()
         shutil.rmtree(self.root, ignore_errors=True)
         shutil.rmtree(self.desk, ignore_errors=True)
-        idx = USER_GROK_HOME / "bots" / "index.json"
+        idx = USER_AGENT_HOME / "bots" / "index.json"
         if idx.is_file():
             try:
                 data = json.loads(idx.read_text(encoding="utf-8"))
@@ -14886,8 +14800,8 @@ class Bot:
         return runtime_brief(self)
 
     def _write_agents(self) -> None:
-        if bot_kind_is_grok_build(self):
-            migrated = migrate_grok_build_soul(self.soul)
+        if bot_kind_is_agent(self):
+            migrated = migrate_agent_soul(self.soul)
             if migrated != self.soul:
                 self.soul = migrated
                 (self.root / "SOUL.md").write_text(self.soul, encoding="utf-8")
@@ -14903,7 +14817,7 @@ class Bot:
         agent_md = agent_md_for_kind(self.kind)
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / "agent.md").write_text(agent_md, encoding="utf-8")
-        dest = self.workspace / ".grok" / "agents" / "desk-bot.md"
+        dest = self.workspace / ".hermes" / "agents" / "desk-bot.md"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(agent_md, encoding="utf-8")
 
@@ -15034,7 +14948,7 @@ class Bot:
             "workspace_backend": "local",
             "workspace_mode": "dedicated",
             "host_access": "full" if bot_kind_has_host_coding(self) else "never",
-            "browser": True if bot_kind_is_grok_build(self) or bot_kind_is_teela(self) or not self.kind else False,
+            "browser": True if bot_kind_is_agent(self) or bot_kind_is_teela(self) or not self.kind else False,
             "terminal": True if bot_kind_has_host_coding(self) or not self.kind else False,
             "inherit_user_skills": bot_kind_has_host_coding(self),
             "inherit_user_mcp": bot_kind_has_host_coding(self),
@@ -15043,13 +14957,13 @@ class Bot:
     def write_profile(self) -> None:
         write_toml_profile(self.root / "PROFILE.toml", self.profile_fields())
 
-    def _link_grok_build_home(self) -> None:
+    def _link_agent_home(self) -> None:
         if not bot_kind_has_host_coding(self):
             return
-        self.grok_home.mkdir(parents=True, exist_ok=True)
+        self.agent_home.mkdir(parents=True, exist_ok=True)
         for name in ("skills", "plugins"):
-            src = USER_GROK_HOME / name
-            dest = self.grok_home / name
+            src = USER_AGENT_HOME / name
+            dest = self.agent_home / name
             if dest.exists() or dest.is_symlink():
                 continue
             if src.exists():
@@ -15069,8 +14983,8 @@ class Bot:
     def record_acp_session(self, session_id: str) -> None:
         """Persist the live ACP session so a restart can resume it."""
         try:
-            self.grok_home.mkdir(parents=True, exist_ok=True)
-            self.grok_home.joinpath("last_acp_session.json").write_text(
+            self.agent_home.mkdir(parents=True, exist_ok=True)
+            self.agent_home.joinpath("last_acp_session.json").write_text(
                 json.dumps({
                     "session_id": str(session_id or ""),
                     "chat_id": str(self.chat_id or ""),
@@ -15084,7 +14998,7 @@ class Bot:
     def last_acp_session_id(self) -> str | None:
         """Recorded session to resume for the current chat, if any."""
         try:
-            data = json.loads(self.grok_home.joinpath("last_acp_session.json").read_text(encoding="utf-8"))
+            data = json.loads(self.agent_home.joinpath("last_acp_session.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return self.newest_persisted_session_id()
         sid = str((data or {}).get("session_id") or "").strip()
@@ -15097,21 +15011,13 @@ class Bot:
         return sid
 
     def newest_persisted_session_id(self) -> str | None:
-        """Bootstrap only: newest on-disk session with content (no record yet)."""
-        root = self.grok_home / "sessions"
-        if not root.is_dir():
-            return None
-        best: tuple[float, str] | None = None
-        try:
-            for updates in root.glob("**/updates.jsonl"):
-                st = updates.stat()
-                if st.st_size == 0:
-                    continue
-                if best is None or st.st_mtime > best[0]:
-                    best = (st.st_mtime, updates.parent.name)
-        except OSError:
-            return None
-        return best[1] if best else None
+        """Bootstrap only: newest persisted session with content (no record yet).
+
+        Hermes stores sessions in the bot's ``state.db`` (one row per session,
+        ``message_count`` > 0 = has content).
+        """
+        sid = agent_home_mod.newest_hermes_session(self.agent_home)
+        return sid
 
     def attach_acp_session(self, session_id: str) -> None:
         """Bind the live ACP session to the active chat for chat-scoped resume."""
@@ -15120,7 +15026,7 @@ class Bot:
             target = self.chat_id or data.get("activeId")
             for row in data.get("chats") or []:
                 if isinstance(row, dict) and row.get("id") == target:
-                    row["grokSession"] = str(session_id)
+                    row["agentSession"] = str(session_id)
                     break
             self._write_timeline(data)
         except Exception:
@@ -15173,12 +15079,12 @@ class Bot:
             self.model = model
             _, user_models = load_user_models()
             write_child_config(
-                self.grok_home,
+                self.agent_home,
                 self.model,
                 user_models,
                 bot_id=self.id,
                 permission_mode="always-approve" if bot_kind_has_host_coding(self) else "default",
-                inherit_mcp=bot_kind_is_grok_build(self),
+                inherit_mcp=bot_kind_is_agent(self),
             )
             if model in user_models and user_models[model].get("context_window"):
                 try:
@@ -15198,19 +15104,19 @@ class Bot:
         self.write_profile()
         if identity_changed:
             (self.root / "agent.md").write_text(agent_md_for_kind(self.kind), encoding="utf-8")
-            self._link_grok_build_home()
+            self._link_agent_home()
             _, user_models = load_user_models()
             write_child_config(
-                self.grok_home,
+                self.agent_home,
                 self.model,
                 user_models,
                 bot_id=self.id,
                 permission_mode="always-approve" if bot_kind_has_host_coding(self) else "default",
-                inherit_mcp=bot_kind_is_grok_build(self),
+                inherit_mcp=bot_kind_is_agent(self),
             )
             self._write_agents()
             agent_md = self.root / "agent.md"
-            dest = self.workspace / ".grok" / "agents" / "desk-bot.md"
+            dest = self.workspace / ".hermes" / "agents" / "desk-bot.md"
             dest.parent.mkdir(parents=True, exist_ok=True)
             if agent_md.is_file():
                 shutil.copy2(agent_md, dest)
@@ -15223,7 +15129,7 @@ class Bot:
         return self.profile()
 
     def _index_upsert(self) -> None:
-        idx = USER_GROK_HOME / "bots" / "index.json"
+        idx = USER_AGENT_HOME / "bots" / "index.json"
         idx.parent.mkdir(parents=True, exist_ok=True)
         data = {"bots": []}
         if idx.is_file():
@@ -15285,7 +15191,7 @@ class Bot:
         """Reset the context window; keep the last measured tok/s (TUI keeps it too)."""
         if used is not None:
             self.context_used = int(used)
-            self.context_source = "grok_runtime" if used else ""
+            self.context_source = "agent_runtime" if used else ""
         self._gen = {}
         self.telemetry = {}
 
@@ -15299,6 +15205,8 @@ class Bot:
         usage = update.get("usage") if isinstance(update.get("usage"), dict) else {}
         if not usage and isinstance(params.get("usage"), dict):
             usage = params.get("usage") or {}
+        if kind == "usage_update" and (update.get("size") is not None or update.get("used") is not None):
+            self.ingest_usage({k: update.get(k) for k in ("size", "used")})
         self.ingest_usage(meta)
         if usage:
             self.ingest_usage(usage)
@@ -15455,8 +15363,20 @@ class Bot:
         self._emit_usage(log=final)
 
     def ingest_usage(self, blob: dict[str, Any] | None) -> None:
-        """Apply Grok Build occupancy (not billed multi-call sums) to the context meter."""
+        """Apply Hermes Agent occupancy (not billed multi-call sums) to the context meter."""
         if not isinstance(blob, dict) or not blob:
+            return
+        # Standard ACP usage_update: {size: window, used: occupancy}.
+        used = tel._as_int(blob.get("used"))
+        size = tel._as_int(blob.get("size"))
+        if used is not None:
+            if used == self.context_used and self.context_source == "agent_runtime":
+                return
+            self.context_used = used
+            self.context_source = "agent_runtime"
+            if size:
+                self.context_window = size
+            self._emit_usage()
             return
         n, source = tel.context_tokens_from_payload(blob)
         if n is None:
@@ -15546,7 +15466,7 @@ class Bot:
         ledger = tel.ledger_stats(blob) if blob else {}
         if ledger:
             out_tok, out_src = tel.visible_output_tokens(ledger)
-            if out_src == "grok_runtime" and (
+            if out_src == "agent_runtime" and (
                 blob.get("completion_tokens") is not None or blob.get("prompt_tokens") is not None
             ):
                 out_src = "local_runtime"
@@ -15615,7 +15535,7 @@ class Bot:
         return snap
 
     def apply_models(self, models: dict[str, Any]) -> None:
-        # This host's config.toml is the picker. Never adopt grok's advertised
+        # This host's config.toml is the picker. Never adopt hermes's advertised
         # currentModelId, and never mix ACP cloud ids into a local-only catalog.
         avail = models.get("availableModels") or models.get("available_models") or []
         acp_by_id: dict[str, dict[str, Any]] = {}
@@ -15640,7 +15560,7 @@ class Bot:
             cw = (tbl or {}).get("context_window") or row.get("context_window")
             if cw and mid == self.model:
                 self.context_window = tel.resolve_context_window(self.model, cw, self.context_window)
-        if bot_kind_is_grok_build(self):
+        if bot_kind_is_agent(self):
             have = {str(r.get("id") or "") for r in catalog}
             for mid, meta in acp_by_id.items():
                 if not mid or mid in have:
@@ -15661,6 +15581,9 @@ class Bot:
                 )
                 have.add(mid)
         self.models = catalog
+        self.models_raw = {
+            str(r.get("id") or ""): r for r in catalog if isinstance(r, dict)
+        }
         if not str(getattr(self, "effort", "") or "").strip():
             hit = next((m for m in catalog if m.get("id") == self.model), {}) or {}
             self.effort = str(hit.get("reasoning_effort") or "")
@@ -15678,14 +15601,14 @@ class Bot:
         if level not in _REASONING_EFFORTS:
             raise ValueError("effort must be off, none, minimal, low, medium, high, xhigh, or max")
         self.effort = level
-        wire = grok_effort_wire(level)
+        wire = agent_effort_wire(level)
         for row in self.models or []:
             if str(row.get("id") or "") == self.model:
                 row["reasoning_effort"] = wire
                 break
 
     def _catalog_with_effort(self, models: dict[str, Any]) -> dict[str, Any]:
-        effort = grok_effort_wire(self.effort or "")
+        effort = agent_effort_wire(self.effort or "")
         out: dict[str, Any] = {}
         for mid, tbl in (models or {}).items():
             if not isinstance(tbl, dict):
@@ -15720,13 +15643,13 @@ class Bot:
         elif changed or not str(self.effort or "").strip():
             self.effort = str((tbl or {}).get("reasoning_effort") or self.effort or "")
         write_child_config(
-            self.grok_home,
+            self.agent_home,
             self.model,
             self._catalog_with_effort(user_models),
             bot_id=self.id,
             permission_mode="always-approve" if bot_kind_has_host_coding(self) else "default",
-            default_reasoning_effort=grok_effort_wire(self.effort or ""),
-            inherit_mcp=bot_kind_is_grok_build(self),
+            default_reasoning_effort=agent_effort_wire(self.effort or ""),
+            inherit_mcp=bot_kind_is_agent(self),
         )
         if changed:
             user_cw = user_models.get(model_id, {}).get("context_window") if model_id in user_models else None
@@ -15749,7 +15672,7 @@ class Bot:
             self._restart_session()
             _, self.models = host_picker_models(user_models, extra_ids=[self.model])
             if self.effort:
-                wire = grok_effort_wire(self.effort)
+                wire = agent_effort_wire(self.effort)
                 for row in self.models or []:
                     if str(row.get("id") or "") == self.model:
                         row["reasoning_effort"] = wire
@@ -15777,7 +15700,7 @@ class Bot:
         src = workspace_target(self, rel, must_exist=True)
         root = self.workspace.resolve()
         rel_posix = src.relative_to(root).as_posix()
-        if rel_posix in {".git", ".grok"} or rel_posix.startswith(".git/") or rel_posix.startswith(".grok/"):
+        if rel_posix in {".git", ".hermes"} or rel_posix.startswith(".git/") or rel_posix.startswith(".hermes/"):
             raise ValueError("protected path")
         trash = (root / "Trash").resolve()
         if src == trash:
@@ -15805,9 +15728,9 @@ class Bot:
         src = workspace_target(self, rel, must_exist=True)
         root = self.workspace.resolve()
         rel_posix = src.relative_to(root).as_posix()
-        if rel_posix in {".git", ".grok", "Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos", "Trash"}:
+        if rel_posix in {".git", ".hermes", "Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos", "Trash"}:
             raise ValueError("protected path")
-        if rel_posix.startswith(".git/") or rel_posix.startswith(".grok/"):
+        if rel_posix.startswith(".git/") or rel_posix.startswith(".hermes/"):
             raise ValueError("protected path")
         if src.is_dir():
             shutil.rmtree(src)
@@ -16310,7 +16233,7 @@ def _avatar_from_profile_text(fields: dict[str, str], raw: str = "") -> tuple[st
 
 
 def load_existing() -> None:
-    root = USER_GROK_HOME / "bots"
+    root = USER_AGENT_HOME / "bots"
     if not root.is_dir():
         return
     for d in root.iterdir():
@@ -16376,11 +16299,11 @@ def create_bot(body: dict[str, Any]) -> Bot:
     with lock:
         bots[bid] = bot
     emit({"type": "bot.created", "bot": bot.profile()})
-    if not Path(GROK_BIN).is_file():
+    if not Path(HERMES_BIN).is_file():
         raise FileNotFoundError(
-            f"Grok Build CLI not found at {GROK_BIN}. "
-            "Do not start grok-deskd as root. Install Grok Build and run ./start.sh as that user, "
-            "or export GROK_BIN=/path/to/grok"
+            f"Hermes Agent CLI not found at {HERMES_BIN}. "
+            "Do not start hermes-deskd as root. Install Hermes Agent and run ./start.sh as that user, "
+            "or export HERMES_BIN=/path/to/hermes"
         )
     try:
         bot.acp.start()
@@ -16447,9 +16370,9 @@ class Handler(BaseHTTPRequestHandler):
         cookie = self.headers.get("Cookie", "")
         for part in cookie.split(";"):
             key, sep, value = part.strip().partition("=")
-            if sep and key == "grok_desk_token" and self._secret_eq(value, token):
+            if sep and key == "hermes_desk_token" and self._secret_eq(value, token):
                 return True
-        # Backward compatibility for older Grok Desk clients. New UI never puts
+        # Backward compatibility for older Hermes Desk clients. New UI never puts
         # the long-lived token in a URL.
         q = parse_qs(urlparse(self.path).query)
         qt = q.get("token", [None])[0]
@@ -16458,7 +16381,7 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def _cluster_header_present(self) -> bool:
-        if self.headers.get("X-Grok-Cluster-Token"):
+        if self.headers.get("X-Hermes-Cluster-Token"):
             return True
         auth = self.headers.get("Authorization", "")
         return auth.lower().startswith("cluster ")
@@ -16467,7 +16390,7 @@ class Handler(BaseHTTPRequestHandler):
         token = cluster.token if cluster is not None else ""
         if not token:
             return False
-        given = self.headers.get("X-Grok-Cluster-Token", "") or ""
+        given = self.headers.get("X-Hermes-Cluster-Token", "") or ""
         if not given:
             auth = self.headers.get("Authorization", "")
             if auth.lower().startswith("cluster "):
@@ -16491,8 +16414,8 @@ class Handler(BaseHTTPRequestHandler):
             "/index.html",
             "/app.js",
             "/styles.css",
-            "/grokbot.css",
-            "/grokbot-ui.js",
+            "/hermesbot.css",
+            "/hermesbot-ui.js",
             "/working-memory.js",
         ) or path.startswith(
             ("/ui/", "/assets/", "/vendor/")
@@ -16870,7 +16793,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _pipe_grok_build_sse(
+    def _pipe_agent_sse(
         self,
         resp: Any,
         allowed_tools: list[str],
@@ -17005,10 +16928,10 @@ class Handler(BaseHTTPRequestHandler):
         if (
             "chat/completions" in rest
             and getattr(resp, "status", 200) == 200
-            and bot_kind_is_grok_build(bot)
+            and bot_kind_is_agent(bot)
             and (stream or "event-stream" in ctype_l)
         ):
-            self._pipe_grok_build_sse(
+            self._pipe_agent_sse(
                 resp,
                 allowed_tools,
                 request_payload=request_payload,
@@ -17028,12 +16951,12 @@ class Handler(BaseHTTPRequestHandler):
                 prior_tools=last_assistant_tool_fingerprints(request_payload),
                 known_task_ids=(
                     known_background_task_ids(request_payload)
-                    if bot_kind_is_grok_build(bot)
+                    if bot_kind_is_agent(bot)
                     else None
                 ),
-                fill_empty_shell=not bot_kind_is_grok_build(bot),
+                fill_empty_shell=not bot_kind_is_agent(bot),
             )
-            if request_payload and not bot_kind_is_grok_build(bot):
+            if request_payload and not bot_kind_is_agent(bot):
                 served = str((request_payload or {}).get("model") or "qwen38")
                 checked = ensure_usable_system_check_completion(
                     body,
@@ -17099,7 +17022,7 @@ class Handler(BaseHTTPRequestHandler):
                 motor = bool(request_payload) and local_llm_motor_turn(request_payload)
                 moved = bool(request_payload) and payload_already_moved(request_payload, bot)
                 fb = None
-                if motor and not moved and not bot_kind_is_grok_build(bot):
+                if motor and not moved and not bot_kind_is_agent(bot):
                     fb = fallback_motor_completion(request_payload, bot=bot)
                 if fb:
                     print("[deskd] truncated motor reply; using inferred tool", flush=True)
@@ -17204,9 +17127,9 @@ class Handler(BaseHTTPRequestHandler):
                 allowed_tools = [
                     canonicalize_tool_name(n, None) for n in tool_names_from_payload(payload)
                 ]
-                if not bot_kind_is_grok_build(bot):
+                if not bot_kind_is_agent(bot):
                     if not any("robot_pose" in n for n in allowed_tools):
-                        allowed_tools = list(allowed_tools) + list(_DEFAULT_GROK_MOTOR_TOOLS)
+                        allowed_tools = list(allowed_tools) + list(_DEFAULT_HERMES_MOTOR_TOOLS)
                     extra = (
                         "bot_desktop__desktop_state",
                         "bot_desktop__desktop_observe",
@@ -17268,7 +17191,7 @@ class Handler(BaseHTTPRequestHandler):
                         )
                         return
                 if (
-                    not bot_kind_is_grok_build(bot)
+                    not bot_kind_is_agent(bot)
                     and local_llm_motor_turn(payload)
                     and robot_tool_failed_this_turn(payload)
                 ):
@@ -17283,7 +17206,7 @@ class Handler(BaseHTTPRequestHandler):
                             fb, allowed_tools, promote_json=True, stream=want_stream
                         )
                         return
-                direct = None if bot_kind_is_grok_build(bot) else local_llm_direct_completion(
+                direct = None if bot_kind_is_agent(bot) else local_llm_direct_completion(
                     payload,
                     served=str(payload.get("model") or served or "qwen38"),
                     bot=bot,
@@ -17300,7 +17223,7 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     return
                 if (
-                    not bot_kind_is_grok_build(bot)
+                    not bot_kind_is_agent(bot)
                     and local_llm_motor_turn(payload)
                     and not motion.needs_vision(last_user_intent_from_payload(payload))
                 ):
@@ -17324,7 +17247,7 @@ class Handler(BaseHTTPRequestHandler):
                     f"choice={payload.get('tool_choice')!r}",
                     flush=True,
                 )
-                if bot_kind_is_grok_build(bot):
+                if bot_kind_is_agent(bot):
                     start_local_prefill_progress(bot, est)
         upstream = urlsplit(upstream_url)
         host = upstream.hostname or "127.0.0.1"
@@ -17748,7 +17671,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Grok-Cluster-Token")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Hermes-Cluster-Token")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
         self.end_headers()
 
@@ -17778,7 +17701,7 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 raw,
                 "application/json",
-                extra={"Set-Cookie": f"grok_desk_token={token}; Path=/; HttpOnly; SameSite=Strict"},
+                extra={"Set-Cookie": f"hermes_desk_token={token}; Path=/; HttpOnly; SameSite=Strict"},
             )
         if path == "/v1/settings":
             return self._json(200, self._settings_public())
@@ -17792,7 +17715,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._static(UI_ROOT / path[4:])
         if path.startswith("/vendor/"):
             return self._static(UI_ROOT / path.lstrip("/"))
-        if path in ("/app.js", "/styles.css", "/grokbot.css", "/grokbot-ui.js", "/working-memory.js"):
+        if path in ("/app.js", "/styles.css", "/hermesbot.css", "/hermesbot-ui.js", "/working-memory.js"):
             return self._static(UI_ROOT / path.lstrip("/"))
         if path == "/v1/models":
             default, catalog = load_user_models()
@@ -17932,8 +17855,8 @@ class Handler(BaseHTTPRequestHandler):
             if not bot:
                 return self._json(404, {"error": "not found"})
             return self._json(200, {"routines": bot.routines})
-        if path == "/v1/runtime/grok":
-            return self._json(200, grok_capabilities())
+        if path == "/v1/runtime/hermes":
+            return self._json(200, agent_capabilities())
         if path.startswith("/v1/bots/") and path.endswith("/dev"):
             bid = path.split("/")[3]
             bot = bots.get(bid)
@@ -18678,8 +18601,8 @@ class Handler(BaseHTTPRequestHandler):
                 bot = bots.get(bid)
                 if not bot:
                     return self._json(404, {"error": "not found"})
-                if bot_kind_is_grok_build(bot):
-                    return self._json(403, {"error": "Grok Build bots do not have the Robot Simulator"})
+                if bot_kind_is_agent(bot):
+                    return self._json(403, {"error": "Hermes Agent bots do not have the Robot Simulator"})
                 skill = str(body.get("skill") or "").strip()
                 params = {
                     k: v
@@ -18757,11 +18680,11 @@ class Handler(BaseHTTPRequestHandler):
                     ev={"type":"desktop.action","bot_id":bid,"action":"click","x":x,"y":y,"object_id":oid}; result.update({"object":obj,"cursor":dict(bot.desktop_cursor)})
                 elif action == "open_app":
                     raw=str(body.get("app") or body.get("app_id") or "").replace("app_","").lower(); app=aliases.get(raw,raw)
-                    if app not in {"grok","browser","files","notepad","editor","terminal","preview","dev","settings"}: return self._json(400,{"error":"unknown MiniOS app"})
-                    ev["app"]=app; bot.surface={"grok":"tui","browser":"browser","files":"desktop","editor":"editor","terminal":"shell","preview":"preview","dev":"dev","notepad":"notepad"}.get(app,bot.surface); result["app"]=app
+                    if app not in {"hermes","browser","files","notepad","editor","terminal","preview","dev","settings"}: return self._json(400,{"error":"unknown MiniOS app"})
+                    ev["app"]=app; bot.surface={"hermes":"tui","browser":"browser","files":"desktop","editor":"editor","terminal":"shell","preview":"preview","dev":"dev","notepad":"notepad"}.get(app,bot.surface); result["app"]=app
                 elif action in {"focus_window","minimize_window","maximize_window","close_window"}:
                     raw=str(body.get("window_id") or body.get("window") or "").removeprefix("win_").lower(); app=aliases.get(raw,raw)
-                    if app not in {"grok","browser","files","notepad","editor","terminal","preview","dev","settings"}: return self._json(400,{"error":"unknown window_id"})
+                    if app not in {"hermes","browser","files","notepad","editor","terminal","preview","dev","settings"}: return self._json(400,{"error":"unknown window_id"})
                     ev.update({"window_id":f"win_{app}","app":app}); result["window_id"]=f"win_{app}"
                 elif action in {"open_file","open_preview"}:
                     rel=str(body.get("path") or "").strip()
@@ -18805,8 +18728,8 @@ class Handler(BaseHTTPRequestHandler):
                 elif action == "stop_app":
                     result.update(bot.stop_dev_process()); bot.surface="dev"; ev={"type":"desktop.action","bot_id":bid,"action":"open_app","app":"dev"}
                 elif action == "robot":
-                    if bot_kind_is_grok_build(bot):
-                        return self._json(403, {"error": "Grok Build bots do not have the Robot Simulator"})
+                    if bot_kind_is_agent(bot):
+                        return self._json(403, {"error": "Hermes Agent bots do not have the Robot Simulator"})
                     body = fill_robot_action_from_intent(bot, body)
                     cmd = str(body.get("cmd") or "")
                     if getattr(bot, "_motor_hold", False) and cmd not in {"status", "state", "live", "telemetry", ""}:
@@ -19387,7 +19310,7 @@ def _on_cluster_dm(ev: dict[str, Any]) -> None:
 
 def ensure_https_cert() -> Path | None:
     """Self-signed cert so phones/other PCs get a secure context (mic needs it)."""
-    cert_dir = USER_GROK_HOME / "certs"
+    cert_dir = USER_AGENT_HOME / "certs"
     cert = cert_dir / "desk-https.pem"
     key = cert_dir / "desk-https.key"
     if not (cert.is_file() and key.is_file()):
@@ -19397,7 +19320,7 @@ def ensure_https_cert() -> Path | None:
                 [
                     "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
                     "-keyout", str(key), "-out", str(cert),
-                    "-days", "825", "-subj", f"/CN={LISTEN_HOST or 'grok-desk'}",
+                    "-days", "825", "-subj", f"/CN={LISTEN_HOST or 'hermes-desk'}",
                     "-addext", f"subjectAltName=IP:{LISTEN_HOST or '127.0.0.1'},IP:127.0.0.1,DNS:localhost",
                 ],
                 check=True, capture_output=True, timeout=60,
@@ -19417,8 +19340,8 @@ def main() -> None:
     if not TOKEN_PATH.is_file():
         TOKEN_PATH.write_text(uuid.uuid4().hex, encoding="utf-8")
         os.chmod(TOKEN_PATH, 0o600)
-    GROK_DESKS.mkdir(parents=True, exist_ok=True)
-    (USER_GROK_HOME / "bots").mkdir(parents=True, exist_ok=True)
+    HERMES_DESKS.mkdir(parents=True, exist_ok=True)
+    (USER_AGENT_HOME / "bots").mkdir(parents=True, exist_ok=True)
     cfg = load_desk_config()
     LISTEN_HOST = cfg["listen_host"]
     LISTEN_PORT = int(cfg["listen_port"])
@@ -19476,12 +19399,12 @@ def main() -> None:
 
     threading.Thread(target=_routine_loop, daemon=True).start()
     threading.Thread(target=_observer_loop, daemon=True, name="minios-observers").start()
-    print(f"grok-deskd {access_url()}  (token in {TOKEN_PATH})")
-    print(f"grok:  {GROK_BIN}")
+    print(f"hermes-deskd {access_url()}  (token in {TOKEN_PATH})")
+    print(f"hermes:  {HERMES_BIN}")
     print(f"open: {access_url()}")
     print(f"bind: {bind_address(LISTEN_HOST)}:{LISTEN_PORT}")
-    print(f"desks: {GROK_DESKS}")
-    print(f"bots:  {USER_GROK_HOME / 'bots'}")
+    print(f"desks: {HERMES_DESKS}")
+    print(f"bots:  {USER_AGENT_HOME / 'bots'}")
     print(f"sandbox: {SANDBOX}")
 
     def _http_loop() -> None:

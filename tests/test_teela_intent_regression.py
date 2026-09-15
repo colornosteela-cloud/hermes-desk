@@ -80,7 +80,7 @@ class ConversationIntentRegressionTests(unittest.TestCase):
 
         for request in (
             "Can you run uname -s",
-            "Can you use grok-build to run system info",
+            "Can you use hermes to run system info",
             "check system info",
             "run uname -s",
         ):

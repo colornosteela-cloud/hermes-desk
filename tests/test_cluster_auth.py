@@ -46,7 +46,7 @@ class FakePeer(BaseHTTPRequestHandler):
         return
 
     def _ok(self) -> bool:
-        got = self.headers.get("X-Grok-Cluster-Token") or ""
+        got = self.headers.get("X-Hermes-Cluster-Token") or ""
         return got == self.token
 
     def do_GET(self):  # noqa: N802
@@ -167,14 +167,14 @@ class ClusterAuthTests(unittest.TestCase):
         return st, data
 
     def test_cluster_hello_ok(self) -> None:
-        st, data = self._req("GET", "/v1/cluster/hello", headers={"X-Grok-Cluster-Token": "mesh-secret"})
+        st, data = self._req("GET", "/v1/cluster/hello", headers={"X-Hermes-Cluster-Token": "mesh-secret"})
         self.assertEqual(st, 200)
         self.assertEqual(data["node"], "teela-brain")
         self.assertIn("teela-body", data["peer_names"])
         self.assertNotIn("url", json.dumps(data["peer_names"]))
 
     def test_cluster_hello_wrong_token(self) -> None:
-        st, data = self._req("GET", "/v1/cluster/hello", headers={"X-Grok-Cluster-Token": "nope"})
+        st, data = self._req("GET", "/v1/cluster/hello", headers={"X-Hermes-Cluster-Token": "nope"})
         self.assertEqual(st, 401)
 
     def test_ui_bearer_on_cluster_hello(self) -> None:
@@ -186,11 +186,11 @@ class ClusterAuthTests(unittest.TestCase):
         self.assertEqual(st, 401)
 
     def test_cluster_header_on_settings(self) -> None:
-        st, _ = self._req("GET", "/v1/settings", headers={"X-Grok-Cluster-Token": "mesh-secret"})
+        st, _ = self._req("GET", "/v1/settings", headers={"X-Hermes-Cluster-Token": "mesh-secret"})
         self.assertIn(st, (401, 403))
 
     def test_cluster_header_on_bootstrap(self) -> None:
-        st, data = self._req("GET", "/v1/bootstrap", headers={"X-Grok-Cluster-Token": "mesh-secret"})
+        st, data = self._req("GET", "/v1/bootstrap", headers={"X-Hermes-Cluster-Token": "mesh-secret"})
         self.assertIn(st, (401, 403))
         if isinstance(data, dict):
             self.assertNotIn("token", data)
@@ -199,7 +199,7 @@ class ClusterAuthTests(unittest.TestCase):
         st, _ = self._req(
             "GET",
             "/v1/llm/models",
-            headers={"X-Grok-Cluster-Token": "mesh-secret"},
+            headers={"X-Hermes-Cluster-Token": "mesh-secret"},
             port=self.lan_port,
         )
         self.assertIn(st, (401, 403))
@@ -224,7 +224,7 @@ class ClusterAuthTests(unittest.TestCase):
         old = d.cluster.token
         d.cluster.token = ""
         try:
-            st, data = self._req("GET", "/v1/cluster/hello", headers={"X-Grok-Cluster-Token": "mesh-secret"})
+            st, data = self._req("GET", "/v1/cluster/hello", headers={"X-Hermes-Cluster-Token": "mesh-secret"})
             self.assertEqual(st, 403)
             self.assertEqual(data.get("error"), "cluster not configured")
         finally:
@@ -330,7 +330,7 @@ class ClusterAuthTests(unittest.TestCase):
         st, data = self._req(
             "GET",
             f"/v1/cluster/links?url=http://127.0.0.1:{self.trap_port}/",
-            headers={"X-Grok-Cluster-Token": "mesh-secret"},
+            headers={"X-Hermes-Cluster-Token": "mesh-secret"},
         )
         self.assertEqual(st, 200)
         self.assertEqual(TrapHandler.hits, 0)

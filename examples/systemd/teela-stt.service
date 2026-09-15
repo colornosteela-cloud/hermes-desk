@@ -1,5 +1,5 @@
 [Unit]
-Description=Teela STT (faster-whisper small.en) for Grok Desk
+Description=Teela STT (faster-whisper small.en) for Hermes Desk
 After=network-online.target
 Wants=network-online.target
 
@@ -15,8 +15,8 @@ Environment=WHISPER_COMPUTE=float16
 # Localhost clients still work (127.0.0.1:8091). Default in stt_server.py stays loopback.
 Environment=STT_HOST=0.0.0.0
 Environment=STT_PORT=8091
-WorkingDirectory=%h/grok-desk-2
-ExecStart=/usr/bin/python3 %h/grok-desk-2/deskd/stt_server.py
+WorkingDirectory=%h/hermes-desk-2
+ExecStart=/usr/bin/python3 %h/hermes-desk-2/deskd/stt_server.py
 Restart=always
 RestartSec=3
 

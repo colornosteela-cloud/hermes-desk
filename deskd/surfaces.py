@@ -1,4 +1,4 @@
-"""Live computer surfaces: Chromium screencast, workspace shell PTY, Grok Build TUI PTY."""
+"""Live computer surfaces: Chromium screencast, workspace shell PTY, Hermes Agent TUI PTY."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from urllib.parse import quote, quote_plus, urlparse
 
 def resolve_chrome_bin() -> str:
     """Find a usable Chromium/Chrome binary without pinning a Playwright revision."""
-    env = (os.environ.get("GROK_DESK_CHROME") or "").strip()
+    env = (os.environ.get("HERMES_DESK_CHROME") or "").strip()
     if env:
         return str(Path(env).expanduser())
     for name in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome"):
@@ -51,7 +51,7 @@ CHROME = resolve_chrome_bin()
 
 
 def resolve_login_home() -> Path:
-    """Home of the user who installed Grok Build, even if deskd was started with sudo."""
+    """Home of the user who installed Hermes Agent, even if deskd was started with sudo."""
     sudo = (os.environ.get("SUDO_USER") or "").strip()
     if os.geteuid() == 0 and sudo and sudo != "root":
         try:
@@ -65,20 +65,20 @@ def resolve_login_home() -> Path:
     return Path(os.environ.get("HOME") or os.path.expanduser("~"))
 
 
-def resolve_grok_bin() -> str:
-    env = (os.environ.get("GROK_BIN") or "").strip()
+def resolve_agent_bin() -> str:
+    env = (os.environ.get("HERMES_BIN") or "").strip()
     cands: list[Path] = []
     if env:
         cands.append(Path(env).expanduser())
-    which = shutil.which("grok")
+    which = shutil.which("hermes")
     if which:
         cands.append(Path(which))
     home = resolve_login_home()
     process_home = Path(os.path.expanduser("~"))
     for h in (home, process_home):
-        cands.append(h / ".local/bin/grok")
-        cands.append(h / ".grok/bin/grok")
-    cands.extend([Path("/usr/local/bin/grok"), Path("/usr/bin/grok")])
+        cands.append(h / ".local/bin/hermes")
+        cands.append(h / ".hermes/bin/hermes")
+    cands.extend([Path("/usr/local/bin/hermes"), Path("/usr/bin/hermes")])
     seen: set[str] = set()
     for p in cands:
         s = str(p)
@@ -90,10 +90,10 @@ def resolve_grok_bin() -> str:
                 return s
         except OSError:
             continue
-    return env or str(home / ".local/bin/grok")
+    return env or str(home / ".local/bin/hermes")
 
 
-GROK_BIN = resolve_grok_bin()
+HERMES_BIN = resolve_agent_bin()
 
 
 def _ws_handshake(host: str, port: int, path: str) -> tuple[socket.socket, bytes]:

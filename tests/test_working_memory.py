@@ -97,8 +97,8 @@ class ManifestAssembleTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        d.GROK_DESKS = self.root / "desks"
-        d.GROK_DESKS.mkdir()
+        d.HERMES_DESKS = self.root / "desks"
+        d.HERMES_DESKS.mkdir()
         self.bot = d.Bot("b_wmmanifest01", "Teela", "", "", "qwen38-27b-q5", "🤖")
         self.bot.workspace = self.root / "ws"
         self.bot.workspace.mkdir()
@@ -333,9 +333,9 @@ class WorkingMemoryHttpTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         home = Path(self.tmp.name)
-        self._orig_desks = d.GROK_DESKS
-        d.GROK_DESKS = home / "desks"
-        d.GROK_DESKS.mkdir()
+        self._orig_desks = d.HERMES_DESKS
+        d.HERMES_DESKS = home / "desks"
+        d.HERMES_DESKS.mkdir()
         token_dir = home / "run"
         token_dir.mkdir()
         self._orig_token = d.TOKEN_PATH
@@ -361,7 +361,7 @@ class WorkingMemoryHttpTests(unittest.TestCase):
         self.httpd.server_close()
         d.bots.pop(self.bot.id, None)
         wm._ledgers.pop(self.bot.id, None)
-        d.GROK_DESKS = self._orig_desks
+        d.HERMES_DESKS = self._orig_desks
         d.TOKEN_PATH = self._orig_token
         self.tmp.cleanup()
 
@@ -425,13 +425,13 @@ class WorkingMemoryHttpTests(unittest.TestCase):
         st, _ = self._req(
             "GET",
             f"/v1/bots/{self.bot.id}/working-memory",
-            headers={"Authorization": "", "X-Grok-Cluster-Token": "mesh-secret"},
+            headers={"Authorization": "", "X-Hermes-Cluster-Token": "mesh-secret"},
         )
         self.assertIn(st, (401, 403))
         st, _ = self._req(
             "GET",
             f"/v1/debug/context?bot_id={self.bot.id}",
-            headers={"Authorization": "", "X-Grok-Cluster-Token": "mesh-secret"},
+            headers={"Authorization": "", "X-Hermes-Cluster-Token": "mesh-secret"},
         )
         self.assertIn(st, (401, 403))
 
@@ -454,7 +454,7 @@ class WorkingMemoryUiTests(unittest.TestCase):
         self.assertIn("Long-Term Memory", index)
         self.assertIn("Retrieval", index)
         self.assertIn("Context History", index)
-        css = (ROOT / "ui" / "grokbot.css").read_text(encoding="utf-8")
+        css = (ROOT / "ui" / "hermesbot.css").read_text(encoding="utf-8")
         tabs = css.split(".wm-tabs {", 1)[1].split(".wm-tab {", 1)[0]
         self.assertIn("flex-wrap: wrap", tabs)
         self.assertIn("flex: 0 0 auto", tabs)

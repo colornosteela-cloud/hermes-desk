@@ -1,6 +1,6 @@
 # LAN cluster
 
-Clone this repo onto each host. Each `grok-deskd` uses **that** host's hardware, `GROK_HOME`, workspaces, and cloud keys. The browser talks to **one origin** (typically teela-brain at `http://10.0.0.10:8742/`). That origin merges peer rosters, reverse-proxies bot HTTP, fans SSE, and forwards teammate DMs.
+Clone this repo onto each host. Each `hermes-deskd` uses **that** host's hardware, `HERMES_DESK_HOME`, workspaces, and cloud keys. The browser talks to **one origin** (typically teela-brain at `http://10.0.0.10:8742/`). That origin merges peer rosters, reverse-proxies bot HTTP, fans SSE, and forwards teammate DMs.
 
 ## Three different secrets
 
@@ -8,9 +8,9 @@ Do not mix these up.
 
 | Secret | Where | What you do with it |
 | --- | --- | --- |
-| **Cluster token** | `~/.grok/desk.json` → Cluster tab | Shared mesh password. Generate **once**. Paste into **Cluster token** on the other hosts. |
-| UI Bearer | `$XDG_RUNTIME_DIR/grok-desk/token` | Automatic. The browser already has it. Ignore it. |
-| xAI / Grok cloud key | that host's `~/.grok/auth.json` (`grok login`); bots **share** this file (symlink + `GROK_AUTH_PATH`), they must not get a second copy | How body/jetson *think*. Not the cluster token. |
+| **Cluster token** | `~/.hermes/desk.json` → Cluster tab | Shared mesh password. Generate **once**. Paste into **Cluster token** on the other hosts. |
+| UI Bearer | `$XDG_RUNTIME_DIR/hermes-desk/token` | Automatic. The browser already has it. Ignore it. |
+| xAI / Hermes cloud key | that host's `~/.hermes/auth.json` (`hermes login`); bots **share** this file (symlinked into each bot's `HERMES_HOME`), they must not get a second copy | How body/jetson *think*. Not the cluster token. |
 
 “Confirm current token” is **not** where you paste the new secret for teela-body. Leave it blank on first setup.
 
@@ -32,7 +32,7 @@ Footer **Save settings** is for listen address / profile. For the mesh, use the 
 
 ### 2. teela-body — paste the same token
 
-1. On teela-body: install Grok Build, `git clone` this repo, `./start.sh`, `grok login`.
+1. On teela-body: install Hermes Agent, `git clone` this repo, `./start.sh`, `hermes login`.
 2. Open **`http://127.0.0.1:8742/`** on teela-body (localhost on body, not brain’s IP).
 3. Settings → LAN cluster.
 4. Node name: `teela-body`.
@@ -56,7 +56,7 @@ On **teela-brain**, Add peer:
 - name: `teela-body`
 - URL: `http://<body-LAN-IP>:8742` (the IPv4 of body, not a hostname)
 
-Then **Save peers** on each host. Saving an RFC1918 peer URL automatically promotes this desk off loopback: `listen_host` becomes this machine’s LAN IP and deskd binds `0.0.0.0:8742` so the other host can fetch `/v1/cluster/bots`. You do not have to type the LAN IP into Profile first. `GROK_DESK_LOOPBACK=1` keeps the old loopback-only bind for tests.
+Then **Save peers** on each host. Saving an RFC1918 peer URL automatically promotes this desk off loopback: `listen_host` becomes this machine’s LAN IP and deskd binds `0.0.0.0:8742` so the other host can fetch `/v1/cluster/bots`. You do not have to type the LAN IP into Profile first. `HERMES_DESK_LOOPBACK=1` keeps the old loopback-only bind for tests.
 
 After both hosts are saved and **deskd is running on each LAN IP**, the hallway on either origin lists local bots plus the other host’s bots (and a stub row for a peer that is configured but offline). If a peer is down, Search shows `Peers: teela-body offline…` — you will not see that computer’s agents until its `./start.sh` is listening on `http://<its-LAN-IP>:8742/`.
 
@@ -87,13 +87,13 @@ From `http://127.0.0.1:8742/` on teela-brain, Cluster step 2 → **Generate / re
 
 Do not share vLLM. Do not bounce brain's local model or shrink 262k. `/v1/llm*` is loopback-only and is never proxied.
 
-Each host's model picker is **that** host's `~/.grok/config.toml`. Bots on brain list brain's local models (grayed from brain's vLLM occupancy). Bots on body list body's catalog (grayed from body's vLLM if it has one). Catalogs are not mixed. Cloud Grok only appears if that host configured it.
+Each host's model picker is **that** host's `~/.hermes/config.toml`. Bots on brain list brain's local models (grayed from brain's vLLM occupancy). Bots on body list body's catalog (grayed from body's vLLM if it has one). Catalogs are not mixed. Cloud Hermes only appears if that host configured it.
 
 | Host | Typical model | Mesh |
 | --- | --- | --- |
 | teela-brain | local vLLM `qwen38` | same `cluster_token` |
-| teela-body | Grok 4.6 cloud | same `cluster_token` |
-| teela-jetson | Grok 4.6 cloud | same `cluster_token` |
+| teela-body | Hermes 4.6 cloud | same `cluster_token` |
+| teela-jetson | Hermes 4.6 cloud | same `cluster_token` |
 
 ## Names vs ids
 
@@ -101,6 +101,6 @@ Pass **bot id** for DMs. Names may collide across nodes and resolve local-first,
 
 ## Rollback
 
-From localhost: Cluster tab → empty peer list → Save. Or set `GROK_DESK_CLUSTER=0` to ignore peers while debugging. Local bots are untouched.
+From localhost: Cluster tab → empty peer list → Save. Or set `HERMES_DESK_CLUSTER=0` to ignore peers while debugging. Local bots are untouched.
 
 SSE fan-in has no replay. A reconnect can drop in-flight tokens (same class of gap as a local EventSource reconnect).

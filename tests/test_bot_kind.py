@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Grok Build vs Teela Brain bot kinds."""
+"""Hermes Agent vs Teela Brain bot kinds."""
 
 from __future__ import annotations
 
@@ -36,13 +36,13 @@ class BotKindTests(unittest.TestCase):
                 self.kind = kind
                 self.remote = remote
 
-        d.ensure_single_teela_brain("grok-build")
+        d.ensure_single_teela_brain("hermes")
         with patch.object(
             d,
             "bots",
             {
                 "a": _Bot("a", "teela-brain"),
-                "b": _Bot("b", "grok-build"),
+                "b": _Bot("b", "hermes"),
                 "c": _Bot("c", "teela-brain", remote=True),
             },
         ):
@@ -51,7 +51,7 @@ class BotKindTests(unittest.TestCase):
                 d.ensure_single_teela_brain("teela-brain")
             self.assertIn("already has a Teela Brain", str(ctx.exception))
             d.ensure_single_teela_brain("teela-brain", exclude_id="a")
-            d.ensure_single_teela_brain("grok-build")
+            d.ensure_single_teela_brain("hermes")
         with patch.object(d, "bots", {"legacy": _Bot("legacy", "")}):
             self.assertTrue(d.occupies_teela_brain_slot(d.bots["legacy"]))
             self.assertTrue(d.teela_brain_slot_taken())
@@ -64,21 +64,21 @@ class BotKindTests(unittest.TestCase):
         self.assertIn("occupies_teela_brain_slot(bot) and teela_brain_slot_taken()", src)
 
     def test_normalize_aliases(self) -> None:
-        self.assertEqual(d.normalize_bot_kind("Grok Build"), "grok-build")
-        self.assertEqual(d.normalize_bot_kind("agentic"), "grok-build")
+        self.assertEqual(d.normalize_bot_kind("Hermes Agent"), "hermes")
+        self.assertEqual(d.normalize_bot_kind("agentic"), "hermes")
         self.assertEqual(d.normalize_bot_kind("Teela Brain"), "teela-brain")
         self.assertEqual(d.normalize_bot_kind("robot"), "teela-brain")
         self.assertEqual(d.normalize_bot_kind(""), "")
         self.assertEqual(d.normalize_bot_kind("", default="teela-brain"), "teela-brain")
 
     def test_agent_md_splits_tools(self) -> None:
-        grok = d.agent_md_for_kind("grok-build")
+        hermes = d.agent_md_for_kind("hermes")
         teela = d.agent_md_for_kind("teela-brain")
-        self.assertIn("same working style as the grok TUI", grok)
-        self.assertIn("do not have a robot body", grok.lower())
-        self.assertNotIn("I-feel", grok)
-        self.assertNotIn("MiniOS", grok)
-        self.assertNotIn("desktop_state", grok)
+        self.assertIn("same working style as the Hermes TUI", hermes)
+        self.assertIn("do not have a robot body", hermes.lower())
+        self.assertNotIn("I-feel", hermes)
+        self.assertNotIn("MiniOS", hermes)
+        self.assertNotIn("desktop_state", hermes)
         self.assertIn("Robot Simulator", teela)
         self.assertIn("teela_body_action", teela)
         self.assertIn("Host-shell", teela)
@@ -86,13 +86,13 @@ class BotKindTests(unittest.TestCase):
         self.assertIn("not in a lane", teela.lower())
 
     def test_default_souls(self) -> None:
-        grok = d.default_soul_for_kind("grok-build", "Coder", "write software")
+        hermes = d.default_soul_for_kind("hermes", "Coder", "write software")
         teela = d.default_soul_for_kind("teela-brain", "Teela", "move the body")
-        self.assertIn("Coder", grok)
-        self.assertIn("do not have a robot body", grok.lower())
-        self.assertIn("regular grok TUI session", grok)
-        self.assertNotIn("one or two short sentences", grok)
-        self.assertNotIn("MiniOS desktop", grok)
+        self.assertIn("Coder", hermes)
+        self.assertIn("do not have a robot body", hermes.lower())
+        self.assertIn("regular Hermes TUI session", hermes)
+        self.assertNotIn("one or two short sentences", hermes)
+        self.assertNotIn("MiniOS desktop", hermes)
         self.assertIn("Teela", teela)
         self.assertIn("You have a body", teela)
 
@@ -118,7 +118,7 @@ class BotKindTests(unittest.TestCase):
                 {"type": "function", "function": {"name": "bot_desktop__robot_pose"}},
             ],
         }
-        out = d.rewrite_local_llm_chat_payload(payload, bot=_KindBot("grok-build"))
+        out = d.rewrite_local_llm_chat_payload(payload, bot=_KindBot("hermes"))
         names = [d._openai_tool_name(t) for t in out.get("tools") or []]
         self.assertIn("read_file", names)
         self.assertIn("run_terminal_command", names)
@@ -142,30 +142,30 @@ class BotKindTests(unittest.TestCase):
 
     def test_inject_live_body_skips_grok_build(self) -> None:
         payload = {"messages": [{"role": "user", "content": "hi"}]}
-        out = d.inject_live_body(payload, _KindBot("grok-build"))
+        out = d.inject_live_body(payload, _KindBot("hermes"))
         self.assertEqual(out["messages"][0]["content"], "hi")
         self.assertTrue(all(m.get("role") != "system" for m in out["messages"]))
 
     def test_grok_build_has_no_robot_simulator(self) -> None:
-        self.assertFalse(d.bot_kind_has_robot_simulator(_KindBot("grok-build")))
+        self.assertFalse(d.bot_kind_has_robot_simulator(_KindBot("hermes")))
         self.assertTrue(d.bot_kind_has_robot_simulator(_KindBot("teela-brain")))
         src = Path(d.__file__).read_text(encoding="utf-8")
-        self.assertIn("Grok Build bots do not have the Robot Simulator", src)
+        self.assertIn("Hermes Agent bots do not have the Robot Simulator", src)
         app = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
         self.assertIn("function botHasRobotSimulator", app)
         self.assertIn("function syncRobotSimulatorForBot", app)
         self.assertIn("function unloadRobotSimulator", app)
-        ui = (ROOT / "ui" / "grokbot-ui.js").read_text(encoding="utf-8")
+        ui = (ROOT / "ui" / "hermesbot-ui.js").read_text(encoding="utf-8")
         self.assertIn("function selectedHasRobotSimulator", ui)
         self.assertIn("if (!selectedHasRobotSimulator()) return;", ui)
 
     def test_desktop_mcp_tool_split(self) -> None:
-        grok = {t["name"] for t in dm.tools_for_kind("grok-build")}
+        hermes = {t["name"] for t in dm.tools_for_kind("hermes")}
         teela = {t["name"] for t in dm.tools_for_kind("teela-brain")}
-        self.assertIn("desktop_open_app", grok)
-        self.assertIn("desktop_run_tests", grok)
-        self.assertNotIn("robot_pose", grok)
-        self.assertNotIn("teela_gesture", grok)
+        self.assertIn("desktop_open_app", hermes)
+        self.assertIn("desktop_run_tests", hermes)
+        self.assertNotIn("robot_pose", hermes)
+        self.assertNotIn("teela_gesture", hermes)
         self.assertIn("robot_pose", teela)
         self.assertIn("teela_body_action", teela)
         self.assertIn("desktop_observe", teela)
@@ -173,10 +173,10 @@ class BotKindTests(unittest.TestCase):
         self.assertIn("desktop_open_app", teela)
         self.assertIn("desktop_browser_navigate", teela)
         self.assertNotIn("desktop_run_tests", teela)
-        self.assertNotIn("teela_system_check", grok)
+        self.assertNotIn("teela_system_check", hermes)
 
     def test_profile_fields_follow_kind(self) -> None:
-        grok = types.SimpleNamespace(
+        hermes = types.SimpleNamespace(
             id="b1",
             name="Coder",
             description="d",
@@ -184,18 +184,18 @@ class BotKindTests(unittest.TestCase):
             avatar_color="",
             avatar_shape="",
             model="qwen38",
-            kind="grok-build",
+            kind="hermes",
             workspace_id="w",
         )
-        grok.kind = "grok-build"
-        fields = d.Bot.profile_fields(grok)  # type: ignore[arg-type]
-        self.assertEqual(fields["kind"], "grok-build")
+        hermes.kind = "hermes"
+        fields = d.Bot.profile_fields(hermes)  # type: ignore[arg-type]
+        self.assertEqual(fields["kind"], "hermes")
         self.assertTrue(fields["inherit_user_skills"])
         self.assertTrue(fields["inherit_user_mcp"])
         self.assertTrue(fields["browser"])
         self.assertEqual(fields["permission_mode"], "always-approve")
         self.assertEqual(fields["host_access"], "full")
-        teela = types.SimpleNamespace(**{**grok.__dict__, "kind": "teela-brain"})
+        teela = types.SimpleNamespace(**{**hermes.__dict__, "kind": "teela-brain"})
         tfields = d.Bot.profile_fields(teela)  # type: ignore[arg-type]
         self.assertEqual(tfields["kind"], "teela-brain")
         self.assertTrue(tfields["inherit_user_skills"])
@@ -205,9 +205,9 @@ class BotKindTests(unittest.TestCase):
         self.assertEqual(tfields["permission_mode"], "always-approve")
 
     def test_grok_build_agents_md_skips_runtime_dump(self) -> None:
-        body = d.agents_markdown_for_bot(_KindBot("grok-build"))
-        self.assertIn("same tools, working style, and answers as the grok TUI", body)
-        self.assertGreater(body.rfind("Agent type: Grok Build"), body.find("# Communication"))
+        body = d.agents_markdown_for_bot(_KindBot("hermes"))
+        self.assertIn("same tools, working style, and answers as the Hermes TUI", body)
+        self.assertGreater(body.rfind("Agent type: Hermes Agent"), body.find("# Communication"))
         self.assertNotIn("Endpoint:", body)
         self.assertNotIn("Context window:", body)
         self.assertNotIn("Chromium + desktop", body)
@@ -216,20 +216,20 @@ class BotKindTests(unittest.TestCase):
     def test_migrate_old_grok_build_soul(self) -> None:
         old = (
             "Talk like a person in the room: one or two short sentences unless the work needs a longer report.\n"
-            "You are a Grok Build agent. Use files, shell, grep, web search, browser, MiniOS desktop, skills, and subagents to do the work.\n"
+            "You are a Hermes Agent agent. Use files, shell, grep, web search, browser, MiniOS desktop, skills, and subagents to do the work.\n"
         )
-        out = d.migrate_grok_build_soul(old)
+        out = d.migrate_agent_soul(old)
         self.assertNotIn("one or two short sentences", out)
         self.assertNotIn("MiniOS desktop", out)
-        self.assertIn("regular Grok Build TUI session", out)
+        self.assertIn("regular Hermes Agent TUI session", out)
 
     def test_grok_build_acp_skips_minios_mcp(self) -> None:
         here = Path("/tmp")
-        env = [{"name": "GROK_DESK_URL", "value": "http://127.0.0.1:8742"}]
+        env = [{"name": "HERMES_DESK_URL", "value": "http://127.0.0.1:8742"}]
         with patch.object(d, "user_mcp_acp_specs", return_value=[]):
-            grok = d.acp_mcp_specs(_KindBot("grok-build"), here, env)
+            hermes = d.acp_mcp_specs(_KindBot("hermes"), here, env)
             teela = d.acp_mcp_specs(_KindBot("teela-brain"), here, env)
-        names = [s["name"] for s in grok]
+        names = [s["name"] for s in hermes]
         self.assertEqual(names, ["desk_models", "desk_team", "bot_memory"])
         self.assertNotIn("bot_desktop", names)
         self.assertNotIn("bot_browser", names)
@@ -240,7 +240,7 @@ class BotKindTests(unittest.TestCase):
 
     def test_acp_inherits_user_mcp_for_grok_build_and_teela(self) -> None:
         here = Path("/tmp")
-        env = [{"name": "GROK_DESK_URL", "value": "http://127.0.0.1:8742"}]
+        env = [{"name": "HERMES_DESK_URL", "value": "http://127.0.0.1:8742"}]
         extra = [
             {
                 "name": "chrome-devtools",
@@ -250,13 +250,13 @@ class BotKindTests(unittest.TestCase):
             }
         ]
         with patch.object(d, "user_mcp_acp_specs", return_value=extra):
-            grok = d.acp_mcp_specs(_KindBot("grok-build"), here, env)
+            hermes = d.acp_mcp_specs(_KindBot("hermes"), here, env)
             teela = d.acp_mcp_specs(_KindBot("teela-brain"), here, env)
         self.assertEqual(
-            [s["name"] for s in grok],
+            [s["name"] for s in hermes],
             ["desk_models", "desk_team", "bot_memory", "chrome-devtools"],
         )
-        self.assertEqual(grok[-1]["command"], "/home/roni/bin/npx")
+        self.assertEqual(hermes[-1]["command"], "/home/roni/bin/npx")
         self.assertEqual(
             [s["name"] for s in teela],
             ["bot_browser", "desk_team", "bot_desktop", "bot_memory", "chrome-devtools"],
@@ -284,24 +284,36 @@ class BotKindTests(unittest.TestCase):
                 "context_window": 500000,
             }
         }
-        with patch.object(d, "load_user_mcp_servers", return_value=servers):
-            d.write_child_config(home, "grok-4.6", catalog, inherit_mcp=True)
-            skipped = Path(tmp.name) / "skip"
-            d.write_child_config(skipped, "grok-4.6", catalog, inherit_mcp=False)
-        text = (home / "config.toml").read_text(encoding="utf-8")
-        self.assertIn("[mcp_servers.chrome-devtools]", text)
-        self.assertIn("chrome-devtools-mcp@latest", text)
-        self.assertIn("startup_timeout_sec = 120", text)
-        self.assertIn("[mcp_servers.chrome-devtools.env]", text)
-        self.assertIn('DISPLAY = ":0"', text)
-        skip_text = (skipped / "config.toml").read_text(encoding="utf-8")
-        self.assertNotIn("mcp_servers", skip_text)
+        d.write_child_config(home, "grok-4.6", catalog, inherit_mcp=True)
+        text = (home / "config.yaml").read_text(encoding="utf-8")
+        self.assertIn("provider: custom", text)
+        self.assertIn("default: grok-4.6", text)
+        self.assertNotIn("mcp_servers", text)
 
-    def test_grok_build_session_meta_is_yolo_only(self) -> None:
-        meta = d.acp_session_meta(_KindBot("grok-build"))
-        self.assertEqual(meta, {"yoloMode": True})
+    def test_host_mcp_inherited_on_acp_session(self) -> None:
+        servers = {
+            "chrome-devtools": {
+                "command": "/home/roni/bin/npx",
+                "args": ["-y", "chrome-devtools-mcp@latest", "--isolated"],
+                "enabled": True,
+                "startup_timeout_sec": 120,
+                "env": {"DISPLAY": ":0", "PATH": "/home/roni/bin"},
+            }
+        }
+        with patch.object(d, "load_user_mcp_servers", return_value=servers):
+            specs = d.user_mcp_acp_specs()
+        names = [s["name"] for s in specs]
+        self.assertIn("chrome-devtools", names)
+        row = next(s for s in specs if s["name"] == "chrome-devtools")
+        self.assertIn("chrome-devtools-mcp@latest", row["args"])
+        env = {e["name"]: e["value"] for e in row["env"]}
+        self.assertEqual(env.get("DISPLAY"), ":0")
+
+    def test_hermes_session_meta_is_empty_for_agent(self) -> None:
+        meta = d.acp_session_meta(_KindBot("hermes"))
+        self.assertEqual(meta, {})
         teela = d.acp_session_meta(_KindBot("teela-brain"))
-        self.assertTrue(teela.get("yoloMode"))
+        self.assertNotIn("yoloMode", teela)
         self.assertIn("rules", teela)
 
     def test_grok_build_keeps_thinking_flags(self) -> None:
@@ -312,31 +324,31 @@ class BotKindTests(unittest.TestCase):
             "reasoning_effort": "high",
             "tools": [{"type": "function", "function": {"name": "read_file"}}],
         }
-        out = d.rewrite_local_llm_chat_payload(payload, bot=_KindBot("grok-build"))
+        out = d.rewrite_local_llm_chat_payload(payload, bot=_KindBot("hermes"))
         self.assertTrue(out["chat_template_kwargs"]["enable_thinking"])
         self.assertEqual(out["chat_template_kwargs"]["reasoning_effort"], "high")
         self.assertEqual(out["reasoning_effort"], "high")
         bare = d.rewrite_local_llm_chat_payload(
             {"model": "qwen38", "messages": [{"role": "user", "content": "hi"}]},
-            bot=_KindBot("grok-build"),
+            bot=_KindBot("hermes"),
         )
         self.assertTrue(bare["chat_template_kwargs"]["enable_thinking"])
-        chosen = _KindBot("grok-build")
+        chosen = _KindBot("hermes")
         chosen.effort = "low"
         applied = d.rewrite_local_llm_chat_payload(payload, bot=chosen)
         self.assertEqual(applied["chat_template_kwargs"]["reasoning_effort"], "low")
         self.assertEqual(applied["reasoning_effort"], "low")
-        silent = _KindBot("grok-build")
+        silent = _KindBot("hermes")
         silent.effort = "off"
         disabled = d.rewrite_local_llm_chat_payload(payload, bot=silent)
         self.assertFalse(disabled["chat_template_kwargs"]["enable_thinking"])
         self.assertNotIn("reasoning_effort", disabled["chat_template_kwargs"])
-        none = _KindBot("grok-build")
+        none = _KindBot("hermes")
         none.effort = "none"
         also = d.rewrite_local_llm_chat_payload(payload, bot=none)
         self.assertFalse(also["chat_template_kwargs"]["enable_thinking"])
         self.assertEqual(d.normalize_reasoning_effort("none"), "off")
-        self.assertEqual(d.grok_effort_wire("off"), "none")
+        self.assertEqual(d.agent_effort_wire("off"), "none")
 
     def test_tool_output_from_nested_acp_content(self) -> None:
         failed = d.tool_output_from_update(
@@ -549,7 +561,7 @@ class BotKindTests(unittest.TestCase):
         payload = {
             "model": "qwen38-flash-next",
             "messages": [
-                {"role": "system", "content": "You are a Grok Build agent.\n" + ("rule\n" * 200)},
+                {"role": "system", "content": "You are a Hermes Agent agent.\n" + ("rule\n" * 200)},
                 {"role": "user", "content": "what files are here?"},
                 {
                     "role": "assistant",
@@ -568,11 +580,11 @@ class BotKindTests(unittest.TestCase):
             ],
             "tools": tools,
         }
-        budget = d.local_prefill_budget(payload, _KindBot("grok-build"))
+        budget = d.local_prefill_budget(payload, _KindBot("hermes"))
         self.assertGreaterEqual(budget, 8000)
         motor = {"messages": [{"role": "user", "content": "wave"}]}
         self.assertLessEqual(d.local_prefill_budget(motor), d.LOCAL_LLM_MOTOR_PREFILL)
-        out = d.rewrite_local_llm_chat_payload(payload, bot=_KindBot("grok-build"))
+        out = d.rewrite_local_llm_chat_payload(payload, bot=_KindBot("hermes"))
         roles = [m.get("role") for m in out["messages"]]
         self.assertIn("tool", roles)
         self.assertTrue(
@@ -674,7 +686,7 @@ class BotKindTests(unittest.TestCase):
         self.assertIn("turn_was_cancelled", src)
         self.assertIn("def start_local_prefill_progress", src)
         self.assertIn("def emit_local_activity", src)
-        self.assertIn("def _pipe_grok_build_sse", src)
+        self.assertIn("def _pipe_agent_sse", src)
         self.assertIn("Reading the local-model prompt", src)
 
     def test_picker_models_include_reasoning_effort(self) -> None:
@@ -687,7 +699,7 @@ class BotKindTests(unittest.TestCase):
         self.assertIn("default_reasoning_effort", src)
         self.assertIn('body.get("effort")', src)
         self.assertIn("normalize_reasoning_effort", src)
-        self.assertIn("grok_effort_wire", src)
+        self.assertIn("agent_effort_wire", src)
 
     def test_system_check_intent_is_teela_not_shell(self) -> None:
         self.assertTrue(d.looks_like_system_check("can you run a full system check of yourself"))
@@ -713,7 +725,7 @@ class BotKindTests(unittest.TestCase):
         names = [d._openai_tool_name(t) for t in teela.get("tools") or []]
         self.assertIn("bot_desktop__teela_system_check", names)
         self.assertIn("read_file", names)
-        grok = d.rewrite_local_llm_chat_payload(
+        hermes = d.rewrite_local_llm_chat_payload(
             {
                 "model": "qwen38",
                 "messages": [{"role": "user", "content": "can you run a full system check of yourself"}],
@@ -722,9 +734,9 @@ class BotKindTests(unittest.TestCase):
                     {"type": "function", "function": {"name": "bot_desktop__teela_system_check"}},
                 ],
             },
-            bot=_KindBot("grok-build"),
+            bot=_KindBot("hermes"),
         )
-        grok_names = [d._openai_tool_name(t) for t in grok.get("tools") or []]
+        grok_names = [d._openai_tool_name(t) for t in hermes.get("tools") or []]
         self.assertIn("run_terminal_command", grok_names)
         self.assertNotIn("bot_desktop__teela_system_check", grok_names)
 
@@ -915,7 +927,7 @@ class BotKindTests(unittest.TestCase):
 
     def test_teela_inbound_dm_is_ping_only(self) -> None:
         self.assertFalse(d.inbound_dm_starts_acp(_KindBot("teela-brain")))
-        self.assertTrue(d.inbound_dm_starts_acp(_KindBot("grok-build")))
+        self.assertTrue(d.inbound_dm_starts_acp(_KindBot("hermes")))
         src = Path(d.__file__).read_text(encoding="utf-8")
         self.assertIn("if not inbound_dm_starts_acp(self):", src)
         start = Path(d.__file__).resolve().parents[1] / "start.sh"
@@ -940,7 +952,7 @@ class BotKindTests(unittest.TestCase):
         self.assertIn("run_terminal_command", names)
         self.assertIn("grep", names)
         self.assertIn("search_replace", names)
-        self.assertIn("grok_build", names)
+        self.assertIn("hermes_build", names)
         loop = Path(d.__file__).read_text(encoding="utf-8").split("def _run_prompt_loop", 1)[1].split("def ", 1)[0]
         self.assertIn("run_teela_executive_turn", loop)
         self.assertNotIn("teela_turn_lane", loop)
@@ -1031,7 +1043,7 @@ class BotKindTests(unittest.TestCase):
         self.assertTrue(replaced.get("ok"))
         self.assertEqual((root / "note.txt").read_text(encoding="utf-8").splitlines()[0], "hi teela")
         self.assertTrue(d.bot_kind_has_host_coding(_KindBot("teela-brain")))
-        self.assertTrue(d.bot_kind_has_host_coding(_KindBot("grok-build")))
+        self.assertTrue(d.bot_kind_has_host_coding(_KindBot("hermes")))
 
     def test_teela_minios_loop_writes_and_injects_memory(self) -> None:
         import memory as botmem
@@ -1094,7 +1106,7 @@ class BotKindTests(unittest.TestCase):
         helper = types.SimpleNamespace(
             id="b_help",
             name="Recipe Bot",
-            kind="grok-build",
+            kind="hermes",
             remote=False,
             destroyed=False,
         )
@@ -1114,13 +1126,13 @@ class BotKindTests(unittest.TestCase):
             self.assertNotIn("b_help", d.bots)
             nope = d.delete_helper_teammate(teela, "Teela Bot")
             self.assertFalse(nope.get("ok"))
-        fake = types.SimpleNamespace(id="b_x", name="Notes", kind="grok-build", model="grok-4.6")
+        fake = types.SimpleNamespace(id="b_x", name="Notes", kind="hermes", model="grok-4.6")
         with patch.object(d, "create_bot", return_value=fake) as cb, patch.object(
             d, "load_user_models", return_value=("grok-4.6", {"grok-4.6": {}})
         ):
             created = d.create_helper_teammate(teela, name="Notes", description="notes helper")
             self.assertTrue(created.get("ok"))
-            self.assertEqual(cb.call_args[0][0]["kind"], "grok-build")
+            self.assertEqual(cb.call_args[0][0]["kind"], "hermes")
             self.assertEqual(cb.call_args[0][0]["model"], "grok-4.6")
         blocked = d.create_helper_teammate(teela, name="Twin", description="x", kind="teela-brain")
         self.assertFalse(blocked.get("ok"))
@@ -1147,11 +1159,11 @@ class BotKindTests(unittest.TestCase):
         self.assertIn("markdown table", d.teela_system_acp_prefix("minios"))
         self.assertNotIn("speak a short", d.teela_system_acp_prefix("host"))
         self.assertNotIn("speak a short", d.teela_system_acp_prefix("minios"))
-        self.assertFalse(d.looks_like_grok_build_job("can you wave"))
+        self.assertFalse(d.looks_like_coding_job("can you wave"))
         with patch.object(d, "voice_enabled", return_value=True):
             acp_note = d.with_voice_note("can you run a system scan", tui=True)
             self.assertNotIn("no markdown", acp_note)
-            self.assertIn("grok TUI", acp_note)
+            self.assertIn("Hermes TUI", acp_note)
             talk_note = d.with_voice_note("hi teela")
             self.assertIn("no markdown", talk_note)
             live = types.SimpleNamespace(_voice_chat=True)

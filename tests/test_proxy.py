@@ -97,7 +97,7 @@ class FakeOwner(BaseHTTPRequestHandler):
         return
 
     def _auth(self) -> bool:
-        return (self.headers.get("X-Grok-Cluster-Token") or "") == self.token
+        return (self.headers.get("X-Hermes-Cluster-Token") or "") == self.token
 
     def _json(self, code, obj):
         raw = json.dumps(obj).encode()

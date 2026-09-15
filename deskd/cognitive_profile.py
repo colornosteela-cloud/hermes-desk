@@ -57,7 +57,7 @@ EMBODIED_CAPS = {
 }
 
 _KIND_EMBODIED = {"teela-brain", "teela", "robot", "embodiment"}
-_KIND_BUILD = {"grok-build", "build", "grokbuild"}
+_KIND_BUILD = {"hermes", "build", "hermesbuild"}
 
 
 def _normalize_kind(value: Any) -> str:

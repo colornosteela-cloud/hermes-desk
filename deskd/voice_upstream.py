@@ -1,8 +1,8 @@
-"""Authoritative TTS/STT upstream URLs for Grok Desk.
+"""Authoritative TTS/STT upstream URLs for Hermes Desk.
 
 Production teela-brain talks to teela-body over LAN. Localhost remains the
-dev fallback. Env aliases: TEELA_TTS_URL / TEELA_STT_URL and GROK_DESK_TTS /
-GROK_DESK_STT. The teela-body IP lives only here.
+dev fallback. Env aliases: TEELA_TTS_URL / TEELA_STT_URL and HERMES_DESK_TTS /
+HERMES_DESK_STT. The teela-body IP lives only here.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ def is_teela_brain_host() -> bool:
     if socket.gethostname().strip().lower() == "teela-brain":
         return True
     try:
-        home = Path(os.environ.get("GROK_HOME", str(Path.home() / ".grok")))
+        home = Path(os.environ.get("HERMES_DESK_HOME", str(Path.home() / ".hermes")))
         rec = json.loads((home / "desk.json").read_text(encoding="utf-8"))
         return str(rec.get("node_name") or "").strip().lower() == "teela-brain"
     except Exception:
@@ -59,13 +59,13 @@ def is_teela_brain_host() -> bool:
 
 
 def tts_url() -> str:
-    return _env_url("TEELA_TTS_URL", "GROK_DESK_TTS") or (
+    return _env_url("TEELA_TTS_URL", "HERMES_DESK_TTS") or (
         REMOTE_TTS if is_teela_brain_host() else LOCAL_TTS
     )
 
 
 def stt_url() -> str:
-    return _env_url("TEELA_STT_URL", "GROK_DESK_STT") or (
+    return _env_url("TEELA_STT_URL", "HERMES_DESK_STT") or (
         REMOTE_STT if is_teela_brain_host() else LOCAL_STT
     )
 

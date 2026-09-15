@@ -1,4 +1,4 @@
-/* GrokBot chrome: window manager, avatars, layout, settings, plugins, mobile.
+/* HermesBot chrome: window manager, avatars, layout, settings, plugins, mobile.
    Live chat/browser/TUI/shell stay in app.js. */
 (function () {
   const app = document.querySelector("#app");
@@ -11,7 +11,7 @@
   const PHONE_MAX = 760;
   const COMPACT_MAX = 1280;
   const COLLAPSE_DRAG_PX = 96;
-  const RIGHT_SPLIT_KEY = "grok-desk-right-split";
+  const RIGHT_SPLIT_KEY = "hermes-desk-right-split";
   const AVATAR_COLORS = ["#8b5cf6", "#2f91f2", "#21b96b", "#ff7817", "#f03f55", "#ef4d98", "#5b61e8", "#3ac991", "#a97044"];
 
   const EMOTION_META = {
@@ -42,8 +42,8 @@
     { state: "focused", words: ["plan", "schedule", "priority", "focus", "review", "check"] },
   ];
 
-  const SURFACE_FOR_APP = { grok: "tui", browser: "browser", files: "desktop", terminal: "shell", editor: "editor", preview: "preview", dev: "dev" };
-  const APP_FOR_SURFACE = { tui: "grok", browser: "browser", desktop: "files", shell: "terminal", editor: "editor", preview: "preview", dev: "dev" };
+  const SURFACE_FOR_APP = { hermes: "tui", browser: "browser", files: "desktop", terminal: "shell", editor: "editor", preview: "preview", dev: "dev" };
+  const APP_FOR_SURFACE = { tui: "hermes", browser: "browser", desktop: "files", shell: "terminal", editor: "editor", preview: "preview", dev: "dev" };
 
   const DEFAULT_PLUGINS = [
     { id: "web-search", name: "Web Search", icon: "🌐", description: "Search the public web from an agent workspace.", installed: true },
@@ -55,14 +55,14 @@
   ];
 
   const DEFAULT_USER_SETTINGS = {
-    profile: { displayName: "Roni", initials: "R", grokHome: "~/.grok" },
+    profile: { displayName: "Roni", initials: "R", agentHome: "~/.hermes" },
     defaultModel: "qwen38-27b-q5",
     models: [
       { key: "qwen38-27b-q5", model: "Qwen3.8-27B", name: "Qwen 3.8 27B Q5", baseUrl: "http://127.0.0.1:8081/v1", apiBackend: "chat_completions", contextWindow: 262144, maxCompletionTokens: 32768, apiKey: "", weights: "/home/roni/models/Qwen3.8-27B/Qwen3.8-27B-UD-Q5_K_XL.gguf" },
       { key: "grok-4.6", model: "grok-4.6", name: "Grok 4.6", baseUrl: "", apiBackend: "responses", contextWindow: 500000, maxCompletionTokens: 65536, apiKey: "" },
       { key: "grok-4.5", model: "grok-4.5", name: "Grok 4.5", baseUrl: "", apiBackend: "responses", contextWindow: 256000, maxCompletionTokens: 65536, apiKey: "" },
     ],
-    environment: { modelsBaseUrl: "", modelsListUrl: "", xaiApiKey: "", grokCodeApiKey: "", defaultModel: "", configPath: "" },
+    environment: { modelsBaseUrl: "", modelsListUrl: "", xaiApiKey: "", agentCodeApiKey: "", defaultModel: "", configPath: "" },
     rawTomlOverride: "",
   };
 
@@ -100,7 +100,7 @@
     return AVATAR_COLORS[h % AVATAR_COLORS.length];
   }
 
-  const avatarStore = loadJson("grok-desk-avatars", {});
+  const avatarStore = loadJson("hermes-desk-avatars", {});
   const emotionStore = {};
   const emotionBusy = {};
   const emotionTimers = {};
@@ -124,7 +124,7 @@
     const next = { ...prev, ...(patch || {}) };
     delete next.state;
     avatarStore[botId] = next;
-    localStorage.setItem("grok-desk-avatars", JSON.stringify(avatarStore));
+    localStorage.setItem("hermes-desk-avatars", JSON.stringify(avatarStore));
   }
 
   const hydratingAvatars = new Set();
@@ -316,7 +316,7 @@
     document.documentElement.style.setProperty("--hallway-w", `${width}px`);
     if (persist && width >= LEFT_MIN) {
       localStorage.setItem("teela-left-width", String(width));
-      localStorage.setItem("grok-desk-hallway-w", String(width));
+      localStorage.setItem("hermes-desk-hallway-w", String(width));
     }
     return width;
   }
@@ -356,7 +356,7 @@
       if (persist) {
         localStorage.setItem(RIGHT_SPLIT_KEY, "custom");
         localStorage.setItem("teela-right-width", String(width));
-        localStorage.setItem("grok-desk-screen-w", String(width));
+        localStorage.setItem("hermes-desk-screen-w", String(width));
       }
     }
     return width;
@@ -366,7 +366,7 @@
     if (isRightCollapsed()) {
       app.style.removeProperty("--right-col");
     } else if (rightSplitMode() === "custom") {
-      const saved = parseFloat(localStorage.getItem("grok-desk-screen-w") || localStorage.getItem("teela-right-width"));
+      const saved = parseFloat(localStorage.getItem("hermes-desk-screen-w") || localStorage.getItem("teela-right-width"));
       const inline = parseFloat(app.style.getPropertyValue("--right-col"));
       const right = Number.isFinite(saved) ? saved : inline;
       if (Number.isFinite(right)) setRightWidth(right, persist);
@@ -383,10 +383,10 @@
     }
   }
   function restorePanelWidths() {
-    const savedLeft = parseFloat(localStorage.getItem("grok-desk-hallway-w") || localStorage.getItem("teela-left-width"));
+    const savedLeft = parseFloat(localStorage.getItem("hermes-desk-hallway-w") || localStorage.getItem("teela-left-width"));
     if (Number.isFinite(savedLeft)) app.style.setProperty("--left-w", `${savedLeft}px`);
     const split = localStorage.getItem(RIGHT_SPLIT_KEY);
-    const savedRight = parseFloat(localStorage.getItem("grok-desk-screen-w") || localStorage.getItem("teela-right-width"));
+    const savedRight = parseFloat(localStorage.getItem("hermes-desk-screen-w") || localStorage.getItem("teela-right-width"));
     if (split === "custom" && Number.isFinite(savedRight)) {
       app.dataset.rightSplit = "custom";
       setRightWidth(savedRight, false);
@@ -448,8 +448,8 @@
     if (mode === "desktop") {
       document.body.classList.remove("mobile-chat", "workspace-open", "hallway-open");
       if (lastLayoutMode && lastLayoutMode !== "desktop") {
-        app.classList.toggle("left-collapsed", localStorage.getItem("teela-left-collapsed") === "1" || localStorage.getItem("grok-desk-left-open") === "0");
-        const rightClosed = localStorage.getItem("teela-right-collapsed") === "1" || localStorage.getItem("grok-desk-screen-open") === "0";
+        app.classList.toggle("left-collapsed", localStorage.getItem("teela-left-collapsed") === "1" || localStorage.getItem("hermes-desk-left-open") === "0");
+        const rightClosed = localStorage.getItem("teela-right-collapsed") === "1" || localStorage.getItem("hermes-desk-screen-open") === "0";
         app.classList.toggle("right-collapsed", rightClosed);
         app.classList.toggle("screen-closed", rightClosed);
       }
@@ -483,7 +483,7 @@
     app.classList.toggle("left-collapsed", !shouldOpen);
     if (persistPanelCollapse()) {
       localStorage.setItem("teela-left-collapsed", shouldOpen ? "0" : "1");
-      localStorage.setItem("grok-desk-left-open", shouldOpen ? "1" : "0");
+      localStorage.setItem("hermes-desk-left-open", shouldOpen ? "1" : "0");
     }
     updatePanelHandles();
     window.dispatchEvent(new Event("resize"));
@@ -505,7 +505,7 @@
     if (shouldOpen) {
       if (getLayoutMode() === "compact") app.classList.add("left-collapsed");
       if (rightSplitMode() === "custom") {
-        const saved = parseFloat(localStorage.getItem("grok-desk-screen-w") || localStorage.getItem("teela-right-width"));
+        const saved = parseFloat(localStorage.getItem("hermes-desk-screen-w") || localStorage.getItem("teela-right-width"));
         if (Number.isFinite(saved)) setRightWidth(saved, false);
         else app.style.removeProperty("--right-col");
       } else {
@@ -516,7 +516,7 @@
     }
     if (persistPanelCollapse()) {
       localStorage.setItem("teela-right-collapsed", shouldOpen ? "0" : "1");
-      localStorage.setItem("grok-desk-screen-open", shouldOpen ? "1" : "0");
+      localStorage.setItem("hermes-desk-screen-open", shouldOpen ? "1" : "0");
     }
     updatePanelHandles();
     window.dispatchEvent(new Event("resize"));
@@ -617,7 +617,7 @@
     const st = window.deskState;
     const bot = (st?.bots || []).find((x) => x.id === st.selected);
     if (typeof window.botHasRobotSimulator === "function") return window.botHasRobotSimulator(bot);
-    return Boolean(bot) && bot.kind !== "grok-build";
+    return Boolean(bot) && bot.kind !== "hermes";
   }
   function openDesktopWindow(name, { focus = true } = {}) {
     if (name === "workspace") name = "files";
@@ -1044,7 +1044,7 @@
         win.style.width = `${Math.min(area.clientWidth - 120, Math.max(480, Math.round(area.clientWidth * 0.62)))}px`;
         win.style.height = `${Math.min(area.clientHeight - 100, Math.max(300, Math.round(area.clientHeight * 0.58)))}px`;
       });
-      focusDesktopWindow(document.querySelector(".app-window.focused-window") || getAppWindow("browser") || getAppWindow("grok"));
+      focusDesktopWindow(document.querySelector(".app-window.focused-window") || getAppWindow("browser") || getAppWindow("hermes"));
     });
   }
   function exitDesktopTakeOver() {
@@ -1069,7 +1069,7 @@
   let isGeneratingToml = false;
   let userSettings = (() => {
     try {
-      const stored = JSON.parse(localStorage.getItem("grok-desk-user-settings") || localStorage.getItem("teela-user-settings") || "null");
+      const stored = JSON.parse(localStorage.getItem("hermes-desk-user-settings") || localStorage.getItem("teela-user-settings") || "null");
       if (!stored) return cloneJson(DEFAULT_USER_SETTINGS);
       const models = Array.isArray(stored.models) && stored.models.length ? stored.models : cloneJson(DEFAULT_USER_SETTINGS.models);
       const have = new Set(models.map((m) => m.key));
@@ -1194,15 +1194,15 @@
       sel.appendChild(o);
       return;
     }
-    const grokBuild = selectedAgentKind() === "grok-build";
+    const agentBuild = selectedAgentKind() === "hermes";
     for (const m of models) {
       const o = document.createElement("option");
       o.value = m.id;
       const llama = String(m.family || m.id || "").toLowerCase().includes("flash-next")
         || String(m.family || "") === "llamacpp"
         || /:8080\b/.test(String(m.base_url || m.baseUrl || ""));
-      const cloud = m.local === false || String(m.id || "").toLowerCase().startsWith("grok");
-      const busy = m.available === false && !grokBuild && !cloud && !llama;
+      const cloud = m.local === false || String(m.id || "").toLowerCase().startsWith("hermes");
+      const busy = m.available === false && !agentBuild && !cloud && !llama;
       o.disabled = busy && m.id !== currentId;
       o.textContent = busy ? `${m.name || m.id} — not running` : (m.name || m.id);
       if (m.unavailable_reason) o.title = m.unavailable_reason;
@@ -1437,7 +1437,7 @@
     return {
       displayName: $("settings-display-name")?.value.trim() || "User",
       initials: ($("settings-initials")?.value.trim() || "U").toUpperCase(),
-      grokHome: $("settings-grok-home")?.value.trim() || "~/.grok",
+      agentHome: $("settings-hermes-home")?.value.trim() || "~/.hermes",
     };
   }
   function readEnvironmentForm() {
@@ -1445,7 +1445,7 @@
       modelsBaseUrl: $("env-models-base-url")?.value.trim() || "",
       modelsListUrl: $("env-models-list-url")?.value.trim() || "",
       xaiApiKey: $("env-xai-api-key")?.value || "",
-      grokCodeApiKey: $("env-grok-code-api-key")?.value || "",
+      agentCodeApiKey: $("env-grok-code-api-key")?.value || "",
       defaultModel: $("env-default-model")?.value.trim() || "",
       configPath: $("env-config-path")?.value.trim() || "",
     };
@@ -1453,12 +1453,12 @@
   function generateEnvExports() {
     const env = readEnvironmentForm();
     const lines = [];
-    if (env.modelsBaseUrl) lines.push(`export GROK_MODELS_BASE_URL=${shellQuote(env.modelsBaseUrl)}`);
-    if (env.modelsListUrl) lines.push(`export GROK_MODELS_LIST_URL=${shellQuote(env.modelsListUrl)}`);
+    if (env.modelsBaseUrl) lines.push(`export HERMES_MODELS_BASE_URL=${shellQuote(env.modelsBaseUrl)}`);
+    if (env.modelsListUrl) lines.push(`export HERMES_MODELS_LIST_URL=${shellQuote(env.modelsListUrl)}`);
     if (env.xaiApiKey) lines.push(`export XAI_API_KEY=${shellQuote(env.xaiApiKey)}`);
-    if (env.grokCodeApiKey) lines.push(`export GROK_CODE_XAI_API_KEY=${shellQuote(env.grokCodeApiKey)}`);
-    if (env.defaultModel) lines.push(`export GROK_DEFAULT_MODEL=${shellQuote(env.defaultModel)}`);
-    if (env.configPath) lines.push(`export GROK_CONFIG_PATH=${shellQuote(env.configPath)}`);
+    if (env.agentCodeApiKey) lines.push(`export HERMES_CODE_API_KEY=${shellQuote(env.agentCodeApiKey)}`);
+    if (env.defaultModel) lines.push(`export HERMES_DEFAULT_MODEL=${shellQuote(env.defaultModel)}`);
+    if (env.configPath) lines.push(`export HERMES_CONFIG_PATH=${shellQuote(env.configPath)}`);
     return lines.length ? lines.join("\n") : "# No environment overrides configured";
   }
   function updateEnvironmentPreview() {
@@ -1626,7 +1626,7 @@
   async function populateSettingsForm() {
     $("settings-display-name").value = userSettings.profile.displayName || "";
     $("settings-initials").value = userSettings.profile.initials || "";
-    $("settings-grok-home").value = userSettings.profile.grokHome || "~/.grok";
+    $("settings-hermes-home").value = userSettings.profile.agentHome || "~/.hermes";
     $("settings-profile-avatar").textContent = (userSettings.profile.initials || "U").toUpperCase();
     $("settings-desk-host").value = window.deskState?.listenHost || "127.0.0.1";
     $("settings-desk-port").value = String(window.deskState?.listenPort || 8742);
@@ -1647,7 +1647,7 @@
               const n = Number(m.maxCompletionTokens || m.max_completion_tokens || 0);
               if (n > 0) return n;
               const id = String(m.key || m.id || m.model || "").toLowerCase();
-              return id.startsWith("grok") ? 65536 : 0;
+              return id.startsWith("hermes") ? 65536 : 0;
             })(),
             apiKey: m.apiKey || m.api_key || "",
             weights: m.weights || "",
@@ -1666,7 +1666,7 @@
     $("env-models-base-url").value = env.modelsBaseUrl || "";
     $("env-models-list-url").value = env.modelsListUrl || "";
     $("env-xai-api-key").value = env.xaiApiKey || "";
-    $("env-grok-code-api-key").value = env.grokCodeApiKey || "";
+    $("env-grok-code-api-key").value = env.agentCodeApiKey || "";
     $("env-default-model").value = env.defaultModel || "";
     $("env-config-path").value = env.configPath || "";
     renderSettingsModels();
@@ -1750,9 +1750,9 @@
   }
 
   /* Plugins */
-  let pluginCatalog = loadJson("grok-desk-plugins", null) || loadJson("teela-plugins", null) || DEFAULT_PLUGINS;
+  let pluginCatalog = loadJson("hermes-desk-plugins", null) || loadJson("teela-plugins", null) || DEFAULT_PLUGINS;
   function savePlugins() {
-    localStorage.setItem("grok-desk-plugins", JSON.stringify(pluginCatalog));
+    localStorage.setItem("hermes-desk-plugins", JSON.stringify(pluginCatalog));
     localStorage.setItem("teela-plugins", JSON.stringify(pluginCatalog));
   }
   function renderPluginCatalog(filter = "") {
@@ -1810,7 +1810,7 @@
   }
   function selectedAgentKind() {
     const hit = document.querySelector('input[name="agent-kind"]:checked');
-    return hit && hit.value === "grok-build" ? "grok-build" : "teela-brain";
+    return hit && hit.value === "hermes" ? "hermes" : "teela-brain";
   }
   function localTeelaBrainTaken() {
     const node = window.deskState?.nodeName || "";
@@ -1819,14 +1819,14 @@
       if (!b || b.remote) return false;
       if (node && b.node && b.node !== node) return false;
       const k = String(b.kind || "").toLowerCase();
-      if (k === "grok-build") return false;
+      if (k === "hermes") return false;
       return k === "teela-brain" || k === "teela" || k === "hybrid" || k === "";
     });
   }
   function setAgentKind(kind, { locked = false } = {}) {
     const editing = Boolean($("agent-edit-id")?.value);
     const taken = !editing && localTeelaBrainTaken();
-    const picked = taken || kind === "grok-build" ? "grok-build" : "teela-brain";
+    const picked = taken || kind === "hermes" ? "hermes" : "teela-brain";
     const picker = $("agent-kind-picker");
     picker?.classList.toggle("is-locked", locked);
     picker?.classList.toggle("teela-taken", taken);
@@ -1850,25 +1850,25 @@
     const editing = Boolean($("agent-edit-id")?.value);
     if (soul && !editing && !soul.value.trim()) {
       soul.placeholder =
-        kind === "grok-build"
-          ? "Grok Build agent: same tools and answers as a grok TUI session. No robot body."
+        kind === "hermes"
+          ? "Hermes Agent agent: same tools and answers as a Hermes TUI session. No robot body."
           : "Teela Brain: feel the live body, then move the Robot Simulator. First person, short replies.";
     }
     if (note && !editing) {
       if (localTeelaBrainTaken()) {
         note.textContent =
-          "This computer already has a Teela Brain. Extra agents are Grok Build so physical robot control stays unique.";
+          "This computer already has a Teela Brain. Extra agents are Hermes Agent so physical robot control stays unique.";
       } else {
         note.textContent =
-          kind === "grok-build"
-            ? "This agent is a regular Grok Build TUI session (files, shell, search, browser, skills, subagents). Chat output matches the TUI. It will not control the Robot Simulator."
-            : "This agent is the one Teela Brain on this computer: proprioception, Robot Simulator, and physical-robot control. Extra agents must be Grok Build.";
+          kind === "hermes"
+            ? "This agent is a regular Hermes Agent TUI session (files, shell, search, browser, skills, subagents). Chat output matches the TUI. It will not control the Robot Simulator."
+            : "This agent is the one Teela Brain on this computer: proprioception, Robot Simulator, and physical-robot control. Extra agents must be Hermes Agent.";
       }
     }
     if (note && editing) {
       note.textContent =
-        kind === "grok-build"
-          ? "Type is locked: Grok Build (same as grok TUI). Saving updates name and SOUL; chat history stays."
+        kind === "hermes"
+          ? "Type is locked: Hermes Agent (same as Hermes TUI). Saving updates name and SOUL; chat history stays."
           : "Type is locked: Teela Brain (Robot Simulator body). Saving updates name and SOUL; chat history stays.";
     }
   }
@@ -1935,7 +1935,7 @@
       $("new-agent-description").value = "";
       $("new-agent-soul").value = "";
       $("new-agent-shape").value = "";
-      setAgentKind(localTeelaBrainTaken() ? "grok-build" : "teela-brain", { locked: false });
+      setAgentKind(localTeelaBrainTaken() ? "hermes" : "teela-brain", { locked: false });
       setAgentSwatch("#8b5cf6");
       fillHomeNodeSelect();
       if (homeNote) {
@@ -2018,7 +2018,7 @@
 
   /* Hourly notes */
   function hourlyKey() {
-    return `grok-desk-hourly:${window.deskState?.selected || "none"}`;
+    return `hermes-desk-hourly:${window.deskState?.selected || "none"}`;
   }
   function loadHourlyNotes() {
     try {
@@ -2144,7 +2144,7 @@
       const stub = !!bot.peer_stub;
       const offline = !!(bot.node_status && bot.node_status !== "ok");
       btn.className = "rail-agent" + (bot.id === selectedId ? " active" : "") + (stub ? " peer-stub" : "") + (offline ? " is-offline" : "");
-      const kindLabel = stub ? (bot.status || "offline") : bot.kind === "grok-build" ? "Grok Build" : "Teela Brain";
+      const kindLabel = stub ? (bot.status || "offline") : bot.kind === "hermes" ? "Hermes Agent" : "Teela Brain";
       const node = bot.node ? ` · ${bot.node}` : "";
       btn.title = `${bot.name} · ${kindLabel}${node}`;
       btn.dataset.agentId = bot.id;
@@ -2674,7 +2674,7 @@
           if (!j.token_set) n4.textContent = "Next: finish step 2 — save the token on this computer.";
           else if (!rows.length) n4.textContent = "Next: finish step 3 — Save peers (name + http://IP:8742).";
           else if (rows.some((r) => r.forward === "auth")) n4.textContent = "Tokens do not match. Paste the SAME token from brain onto this host (step 2 → paste → Save token).";
-          else if (rows.some((r) => r.forward === "offline")) n4.textContent = "Peer is offline. Check the IP:8742, that deskd is running there, and Grok Desk address is that machine’s LAN IP.";
+          else if (rows.some((r) => r.forward === "offline")) n4.textContent = "Peer is offline. Check the IP:8742, that deskd is running there, and Hermes Desk address is that machine’s LAN IP.";
           else if (rows.some((r) => r.reverse !== "ok")) n4.textContent = "This host can see the peer, but the peer has not added this host yet. On the other computer, add this host as a peer (step 3) and Save.";
           else n4.textContent = "Mesh hello ok. You can chat from either desk. Phones still use the brain URL.";
         }
@@ -2708,7 +2708,7 @@
       userSettings.defaultModel = $("settings-default-model")?.value || userSettings.models[0]?.key || "";
       const editor = $("raw-toml-editor");
       userSettings.rawTomlOverride = editor?.dataset.userEdited ? editor.value : "";
-      localStorage.setItem("grok-desk-user-settings", JSON.stringify(userSettings));
+      localStorage.setItem("hermes-desk-user-settings", JSON.stringify(userSettings));
       localStorage.setItem("teela-user-settings", JSON.stringify(userSettings));
       refreshProfileUi();
       try {
@@ -2989,7 +2989,7 @@
     $("ubuntuDesktopViewer")?.addEventListener("keydown", (e) => {
       if (e.target.closest("input,textarea,select")) return;
       if (!e.altKey) return;
-      const apps = { 1: "grok", 2: "browser", 3: "files", 4: "terminal", 5: "editor", 6: "preview", 7: "dev", 8: "settings", 9: "notepad" };
+      const apps = { 1: "hermes", 2: "browser", 3: "files", 4: "terminal", 5: "editor", 6: "preview", 7: "dev", 8: "settings", 9: "notepad" };
       if (apps[e.key]) {
         e.preventDefault();
         openDesktopWindow(apps[e.key]);

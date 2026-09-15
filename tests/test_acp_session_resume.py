@@ -1,4 +1,4 @@
-"""Grok Build bots keep their conversation across ACP restarts via session resume."""
+"""Hermes Agent bots keep their conversation across ACP restarts via session resume."""
 import io
 import json
 import os
@@ -18,9 +18,9 @@ import deskd as d  # noqa: E402
 def _bare_bot(root: Path) -> d.Bot:
     bot = d.Bot.__new__(d.Bot)
     bot.root = root
-    bot.grok_home = root / "grok-home"
+    bot.agent_home = root / "hermes-home"
     bot.workspace = root / "workspace"
-    bot.grok_home.mkdir(parents=True, exist_ok=True)
+    bot.agent_home.mkdir(parents=True, exist_ok=True)
     bot.workspace.mkdir(parents=True, exist_ok=True)
     bot.messages = []
     bot.chat_id = ""
@@ -51,26 +51,42 @@ class SessionRecordTests(unittest.TestCase):
     def test_missing_file_without_sessions_yields_none(self) -> None:
         self.assertIsNone(self.bot.last_acp_session_id())
 
+    @staticmethod
+    def _write_state_db(home, rows) -> None:
+        import sqlite3
+
+        db = home / "state.db"
+        con = sqlite3.connect(db)
+        con.execute(
+            "create table sessions (id text primary key, last_activity_at real, "
+            "message_count integer default 0)"
+        )
+        con.execute(
+            "create table messages (session_id text, role text, content text, timestamp real)"
+        )
+        for sid, ts, count in rows:
+            con.execute(
+                "insert into sessions (id, last_activity_at, message_count) values (?,?,?)",
+                (sid, ts, count),
+            )
+            for k in range(count):
+                con.execute(
+                    "insert into messages (session_id, role, content, timestamp) values (?,?,?,?)",
+                    (sid, "user", "x", ts + k),
+                )
+        con.commit()
+        con.close()
+
     def test_missing_file_bootstraps_from_newest_on_disk_session(self) -> None:
-        base = self.bot.grok_home / "sessions" / "enc"
-        old = base / "01a0-old-sid"
-        new = base / "01a0-new-sid"
-        old.mkdir(parents=True)
-        new.mkdir(parents=True)
-        (old / "updates.jsonl").write_text("{}\n", encoding="utf-8")
-        (new / "updates.jsonl").write_text("{}\n", encoding="utf-8")
-        os.utime(old / "updates.jsonl", (1000.0, 1000.0))
-        os.utime(new / "updates.jsonl", (2000.0, 2000.0))
-        empty = base / "01a0-empty-sid"
-        empty.mkdir(parents=True)
-        (empty / "updates.jsonl").write_text("", encoding="utf-8")
+        self._write_state_db(
+            self.bot.agent_home,
+            [("01a0-old-sid", 1000.0, 1), ("01a0-new-sid", 2000.0, 1)],
+        )
         self.assertEqual(self.bot.last_acp_session_id(), "01a0-new-sid")
 
     def test_chat_mismatch_does_not_fall_back_to_disk(self) -> None:
         self.bot.record_acp_session("01a0-sid-one")
-        new = self.bot.grok_home / "sessions" / "enc" / "01a0-disk-sid"
-        new.mkdir(parents=True)
-        (new / "updates.jsonl").write_text("{}\n", encoding="utf-8")
+        self._write_state_db(self.bot.agent_home, [("01a0-disk-sid", 3000.0, 1)])
         self.bot.chat_id = "c_other"
         self.assertIsNone(self.bot.last_acp_session_id())
 
@@ -80,7 +96,7 @@ class SessionRecordTests(unittest.TestCase):
         self.bot.attach_acp_session("01a0-sid-bound")
         saved = json.loads(self.bot.timeline_path().read_text(encoding="utf-8"))
         row = next(c for c in saved["chats"] if c.get("id") == cid)
-        self.assertEqual(row.get("grokSession"), "01a0-sid-bound")
+        self.assertEqual(row.get("agentSession"), "01a0-sid-bound")
 
     def test_attach_survives_chat_touch(self) -> None:
         data = self.bot.ensure_timeline()
@@ -90,7 +106,7 @@ class SessionRecordTests(unittest.TestCase):
         self.bot._touch_active_chat()
         saved = json.loads(self.bot.timeline_path().read_text(encoding="utf-8"))
         row = next(c for c in saved["chats"] if c.get("id") == cid)
-        self.assertEqual(row.get("grokSession"), "01a0-sid-bound")
+        self.assertEqual(row.get("agentSession"), "01a0-sid-bound")
         self.assertEqual(row.get("messageCount"), 1)
 
 
@@ -106,15 +122,15 @@ class _FakeProc:
 def _fake_bot(root: Path) -> "unittest.mock.MagicMock":
     bot = unittest.mock.MagicMock()
     bot.id = "b_resume"
-    bot.kind = "grok-build"
+    bot.kind = "hermes"
     bot.model = "grok-4.6"
     bot.effort = ""
     bot.status = ""
     bot.surface = "chat"
-    bot.grok_home = root / "grok-home"
+    bot.agent_home = root / "hermes-home"
     bot.workspace = root / "workspace"
     bot.chat_id = "c_active"
-    bot.grok_home.mkdir(parents=True, exist_ok=True)
+    bot.agent_home.mkdir(parents=True, exist_ok=True)
     bot.workspace.mkdir(parents=True, exist_ok=True)
     return bot
 
@@ -160,6 +176,7 @@ class AcpStartResumeTests(unittest.TestCase):
 
         acp.request = fake_request  # type: ignore[method-assign]
         caps = {
+            "acp": True,
             "available": True,
             "acp_stdio": True,
             "cwd_flag": True,
@@ -173,9 +190,9 @@ class AcpStartResumeTests(unittest.TestCase):
             "sandbox_flag": False,
             "version": "test",
         }
-        with patch.object(d, "grok_capabilities", return_value=caps):
+        with patch.object(d, "agent_capabilities", return_value=caps):
             with patch.object(d.subprocess, "Popen", return_value=_FakeProc()):
-                with patch.object(d, "apply_shared_grok_auth"):
+                with patch.object(d, "apply_shared_agent_auth"):
                     with patch.object(d, "copy_auth"):
                         with patch.object(d, "acp_mcp_specs", return_value=[]):
                             with patch.object(d, "acp_session_meta", return_value={}):
@@ -251,7 +268,7 @@ class RestartWiringTests(unittest.TestCase):
             "updatedAt": 2.0,
             "preview": "",
             "messageCount": 1,
-            "grokSession": "01a0-old-sid",
+            "agentSession": "01a0-old-sid",
         })
         self.bot._write_timeline(data)
         started: list[dict] = []

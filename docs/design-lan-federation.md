@@ -1,22 +1,22 @@
-# Multi-host Grok Desk LAN Federation
+# Multi-host Hermes Desk LAN Federation
 
 | Field | Value |
 | --- | --- |
-| **Title** | Multi-host Grok Desk LAN federation |
-| **Author** | Grok Desk architecture |
+| **Title** | Multi-host Hermes Desk LAN federation |
+| **Author** | Hermes Desk architecture |
 | **Date** | 2026-08-30 |
 | **Status** | Draft (rev 4 — open questions resolved) |
-| **Codebase** | `/home/roni/grok-desk` (not yet a git repo) |
-| **Publish target** | GitHub `Colornosteela-cloud/Grok-desk` |
+| **Codebase** | `/home/roni/hermes-desk` (not yet a git repo) |
+| **Publish target** | GitHub `Colornosteela-cloud/Hermes-desk` |
 | **Audience** | Senior engineers implementing immediately after consensus |
 
 ---
 
 ## Overview
 
-Grok Desk today is a single-process control plane: `deskd/deskd.py` owns an in-memory `bots` dict, serves the vanilla SPA from `ui/`, and is the ACP client for per-bot `grok agent stdio` children. `GET /v1/bots` lists only that process's bots. `POST /v1/bots/{id}/dm` resolves the destination in the same dict and calls `Bot.deliver_dm` in-process. The UI opens one `EventSource("/v1/events")` against one origin.
+Hermes Desk today is a single-process control plane: `deskd/deskd.py` owns an in-memory `bots` dict, serves the vanilla SPA from `ui/`, and is the ACP client for per-bot `hermes acp` children. `GET /v1/bots` lists only that process's bots. `POST /v1/bots/{id}/dm` resolves the destination in the same dict and calls `Bot.deliver_dm` in-process. The UI opens one `EventSource("/v1/events")` against one origin.
 
-This design federates **three real LAN hosts** — `teela-brain` (10.0.0.10:8742, 2× Intel Arc Pro B60, local vLLM `qwen38`), `teela-body` (2× RTX 4060 Ti 16GB, likely Grok 4.6 cloud), `teela-jetson` (Jetson Orin Nano Super, ARM, likely Grok 4.6 cloud) — without a shared database, without GPU P2P, and without a cluster-wide model. Each host runs a full `grok-deskd`. Bots, workspaces (`~/grok-desks/<id>/workspace`), and `GROK_HOME` (`~/.grok/bots/<id>/grok-home`) stay on the node that created them. Cognition stays per-bot / per-node.
+This design federates **three real LAN hosts** — `teela-brain` (10.0.0.10:8742, 2× Intel Arc Pro B60, local vLLM `qwen38`), `teela-body` (2× RTX 4060 Ti 16GB, likely Hermes 4.6 cloud), `teela-jetson` (Jetson Orin Nano Super, ARM, likely Hermes 4.6 cloud) — without a shared database, without GPU P2P, and without a cluster-wide model. Each host runs a full `hermes-deskd`. Bots, workspaces (`~/hermes-desks/<id>/workspace`), and `HERMES_DESK_HOME` (`~/.hermes/bots/<id>/hermes-home`) stay on the node that created them. Cognition stays per-bot / per-node.
 
 The browser continues to talk to **one origin** (typically `http://10.0.0.10:8742`). That origin merges peer rosters, reverse-proxies bot-scoped HTTP (prompt, chats, workspace, browser frames, TUI/shell), fans peer SSE into the existing `/v1/events` stream, and forwards teammate DMs over a cluster-authenticated LAN protocol. Remote nodes are never contacted by the phone/desktop UI. Mesh **configuration** (token, peers) is loopback-only so a guest who obtained the LAN UI token via `/v1/bootstrap` cannot read or rotate the cluster secret.
 
@@ -28,26 +28,26 @@ The browser continues to talk to **one origin** (typically `http://10.0.0.10:874
 
 | Concern | Today | File / symbol |
 | --- | --- | --- |
-| Config | `~/.grok/desk.json` is only `listen_host` / `listen_port` | `load_desk_config()` L123–139, live file `{"listen_host":"10.0.0.10","listen_port":8742}` |
+| Config | `~/.hermes/desk.json` is only `listen_host` / `listen_port` | `load_desk_config()` L123–139, live file `{"listen_host":"10.0.0.10","listen_port":8742}` |
 | Config save | **Overwrites the whole file** with those two keys | `save_desk_config()` L142–145; `apply_listen()` L177–188 |
-| Auth | Per-process UI token in `$XDG_RUNTIME_DIR/grok-desk/token` | `desk_token()` L220–223; `_auth_ok()` L2692–2710 |
+| Auth | Per-process UI token in `$XDG_RUNTIME_DIR/hermes-desk/token` | `desk_token()` L220–223; `_auth_ok()` L2692–2710 |
 | LAN | Settings bind: loopback → `127.0.0.1`, else `0.0.0.0`; UI already works from phone | `bind_address()` L80–81, `lan_mode()` L84–85, `public_listen()` L167–174 |
 | Bootstrap | Unauthenticated on loopback or LAN; returns UI token **and already includes `lan` via `public_listen()`** | `GET /v1/bootstrap` L2816–2822 + `public_listen()` L167–174 |
 | Roster | Local `bots` dict only | `GET /v1/bots` L2851–2853 |
 | DM | In-process `bots.get(spec)` / name match → `dest.deliver_dm(src, text)` | `do_POST` L3142–3161; `Bot.deliver_dm` L2128–2148 |
 | SSE | In-process `subscribers` list; `emit()` fan-out | `emit()` L191–201; `Handler._sse()` L3006–3041; UI `connectEvents()` `ui/app.js` L2418 |
 | emit overflow | If a subscriber queue exceeds 500, **that subscriber is disconnected** (not a cap-and-keep of old events) | `emit()` L198–201 |
-| MCP teammates | `desk_mcp.py` GET `/v1/bots` + POST `/v1/bots/{BOT}/dm` against **loopback** `GROK_DESK_URL` | `deskd/desk_mcp.py`; injected at `AcpClient._start_locked` L580–596 |
+| MCP teammates | `desk_mcp.py` GET `/v1/bots` + POST `/v1/bots/{BOT}/dm` against **loopback** `HERMES_DESK_URL` | `deskd/desk_mcp.py`; injected at `AcpClient._start_locked` L580–596 |
 | Inference | Loopback-only `/v1/llm` → `127.0.0.1:8000`, alias map, `enable_thinking=false` | `_proxy_local_llm()` L2727–2795; `_auth_ok` rejects non-loopback L2696–2697 |
 | Child models | `write_child_config()` rewrites `127.0.0.1:8000/8080` → `http://127.0.0.1:{LISTEN_PORT}/v1/llm`, idle 600s | L250–261, L264–319 |
 | HTTP verbs | `do_GET` / `do_POST` / `do_PUT` / `do_DELETE` / `do_OPTIONS`. **No `do_PATCH`.** | `Handler` L2803–3472 |
 | POST body | `do_POST` **always** `_read_json()` before routing, 80 MB cap | L3043–3056 |
-| UI roster | No node badge; `renderRoster()` uses name+status only | `ui/app.js` L1059–1079; `renderAgentRail` `ui/grokbot-ui.js` L1241 |
-| Settings | Profile tab: listen host/port only; save posts those two keys | `ui/index.html` L529–531; `deskSaveAccess` `ui/app.js` L1736–1741; save handler `ui/grokbot-ui.js` L1424–1439 |
-| Create/delete | Always the process serving the request; modal defaults model to `qwen38-27b` | `create_bot()` L2651–2668; `do_DELETE` L3464–3471; `ui/index.html` L654–658; `grokbot-ui.js` L1107, L1524 |
-| Chrome binary | `GROK_DESK_CHROME` default `~/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome` (x86_64) | `surfaces.py` L26–29; `ensure_browser` swallows start failures `deskd.py` L1932–1942 |
+| UI roster | No node badge; `renderRoster()` uses name+status only | `ui/app.js` L1059–1079; `renderAgentRail` `ui/hermesbot-ui.js` L1241 |
+| Settings | Profile tab: listen host/port only; save posts those two keys | `ui/index.html` L529–531; `deskSaveAccess` `ui/app.js` L1736–1741; save handler `ui/hermesbot-ui.js` L1424–1439 |
+| Create/delete | Always the process serving the request; modal defaults model to `qwen38-27b` | `create_bot()` L2651–2668; `do_DELETE` L3464–3471; `ui/index.html` L654–658; `hermesbot-ui.js` L1107, L1524 |
+| Chrome binary | `HERMES_DESK_CHROME` default `~/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome` (x86_64) | `surfaces.py` L26–29; `ensure_browser` swallows start failures `deskd.py` L1932–1942 |
 
-Working features that this design **must not replace with mocks**: ACP stdio chat, per-bot `GROK_HOME` / workspace, persistence (`chat.jsonl`, timeline, import/export), TUI + browser surfaces, local vLLM proxy, phone (≤760) / compact (≤1280) / desktop layouts, composer pill, context meter, LAN listen.
+Working features that this design **must not replace with mocks**: ACP stdio chat, per-bot `HERMES_DESK_HOME` / workspace, persistence (`chat.jsonl`, timeline, import/export), TUI + browser surfaces, local vLLM proxy, phone (≤760) / compact (≤1280) / desktop layouts, composer pill, context meter, LAN listen.
 
 ### Pain points
 
@@ -67,10 +67,10 @@ Phone / desktop browser
  teela-brain  10.0.0.10:8742     mesh config from 127.0.0.1 only
    2× Intel Arc Pro B60 (~24GB)
    vLLM qwen38  127.0.0.1:8000  TP=2  max-model-len 262144
-   bots live in ~/.grok/bots  workspaces in ~/grok-desks
+   bots live in ~/.hermes/bots  workspaces in ~/hermes-desks
         │ cluster_token over LAN HTTP
-        ├──────────────► teela-body    2× RTX 4060 Ti 16GB   (cloud Grok 4.6 now; local NVIDIA later)
-        └──────────────► teela-jetson  Orin Nano Super ARM   (cloud Grok 4.6; no x86/XPU assumption)
+        ├──────────────► teela-body    2× RTX 4060 Ti 16GB   (cloud Hermes 4.6 now; local NVIDIA later)
+        └──────────────► teela-jetson  Orin Nano Super ARM   (cloud Hermes 4.6; no x86/XPU assumption)
 ```
 
 ---
@@ -83,7 +83,7 @@ Phone / desktop browser
 - Selecting a remote bot runs prompt / undo / model / soul / chats / workspace / browser / TUI / shell **on the owner node**.
 - `list_teammates` / `message_teammate` work across nodes.
 - SSE stays a single EventSource; origin fans in peer events.
-- `~/.grok/desk.json` grows `node_name`, `cluster_token`, `peers` without losing unknown keys on save.
+- `~/.hermes/desk.json` grows `node_name`, `cluster_token`, `peers` without losing unknown keys on save.
 - Cluster auth is a shared secret **distinct in string and in authority** from the per-desk UI token. Cluster routes refuse empty token. Mesh config is not writable with the UI token from the LAN.
 - Clone/install docs for all three hardware profiles from the same repo.
 - Latency on this 3-node LAN: roster merge **< 500ms** typical; DM **< 200ms** typical; SSE proxy must not add multi-second lag.
@@ -104,13 +104,13 @@ Phone / desktop browser
 - A `do_PATCH` verb (none exists; do not add one for cluster).
 - pytest or any new test runner (stdlib `unittest` only).
 - Live dual-token cluster rotation (v1 is one shared `cluster_token`).
-- Detecting `aarch64` / Jetson in code to disable `BrowserSurface` (docs set `GROK_DESK_CHROME` only).
+- Detecting `aarch64` / Jetson in code to disable `BrowserSurface` (docs set `HERMES_DESK_CHROME` only).
 
 ---
 
 ## Key Decisions
 
-1. **Federation, not a single control plane.** Each host is a full deskd. Ownership is "created-on this node." Rationale: workspaces, Chromium profiles, ACP children, and GPU/cloud keys are already per-process and per-`GROK_HOME`. A shared DB would still need remote execution.
+1. **Federation, not a single control plane.** Each host is a full deskd. Ownership is "created-on this node." Rationale: workspaces, Chromium profiles, ACP children, and GPU/cloud keys are already per-process and per-`HERMES_DESK_HOME`. A shared DB would still need remote execution.
 
 2. **UI talks to one origin; deskd proxies.** Rationale: `_auth_ok` + `/v1/bootstrap` already mint a per-node UI token; phones already use `http://10.0.0.10:8742`. Extra EventSources against body/jetson would need those nodes' tokens and would fail CORS/mixed-content on some clients. The Cluster settings tab mutates **this origin's `desk.json` only**; body and jetson need the same tab (or a file edit) on those hosts.
 
@@ -122,19 +122,19 @@ Phone / desktop browser
 
 6. **Generic bot-scoped reverse proxy**, not a hand-written RPC per route. A single `_proxy_or_local(path)` runs at the top of GET/POST/PUT/DELETE after `_authorize`. If the owner is remote, POST/PUT **must not** `_read_json()`; stream `rfile` with Content-Length. Rationale: `do_POST` today always reads JSON first (L3049–3056); `do_PUT` 404s before reading the body (L3431–3436). There is no `do_PATCH`.
 
-7. **Create is local by default; delete/model/soul/prompt of a remote bot is proxied.** **Create-on-node is in this MVP** (PR-4 `/v1/cluster/create` + `peer-models`; PR-7 Home node picker). When home node ≠ this `node_name`, the model `<select>` is filled from **that peer's** `GET /v1/models`, defaulting to `grok-4.6` for body/jetson, and create fails closed if the chosen id is not on the owner. MCP `create_teammate` stays owner-local and keeps using the calling node's default (often `qwen38-27b` on brain).
+7. **Create is local by default; delete/model/soul/prompt of a remote bot is proxied.** **Create-on-node is in this MVP** (PR-4 `/v1/cluster/create` + `peer-models`; PR-7 Home node picker). When home node ≠ this `node_name`, the model `<select>` is filled from **that peer's** `GET /v1/models`, defaulting to `hermes-4.6` for body/jetson, and create fails closed if the chosen id is not on the owner. MCP `create_teammate` stays owner-local and keeps using the calling node's default (often `qwen38-27b` on brain).
 
 8. **New module `deskd/cluster.py` with no `deskd` imports.** `Handler` stays in `deskd.py`. Inject `emit`, `lookup_local_bot`, `local_profiles` from `main()`. `accept_dm` is handled in `Handler` (cluster.py only does outbound HTTP). Rationale: `deskd.py` is 3554 lines and a circular import would fail or partially initialize.
 
-9. **No new Python dependencies.** Use existing `http.client.HTTPConnection` (already used by `_proxy_local_llm`) plus `threading`, `hmac.compare_digest`, `json`, stdlib `unittest`. Rationale: Jetson and both x86 boxes stay `python3 deskd/deskd.py`. Tests patch `desk_config_path()` / `GROK_HOME`, not a phantom pytest.
+9. **No new Python dependencies.** Use existing `http.client.HTTPConnection` (already used by `_proxy_local_llm`) plus `threading`, `hmac.compare_digest`, `json`, stdlib `unittest`. Rationale: Jetson and both x86 boxes stay `python3 deskd/deskd.py`. Tests patch `desk_config_path()` / `HERMES_DESK_HOME`, not a phantom pytest.
 
-10. **Hardware profiles are docs + example `desk.json` / `config.toml`, not code.** Rationale: inference is already per-child via `write_child_config` and `copy_auth`. A scheduler would imply shared GPUs, which we refuse. Jetson Chromium: **document `GROK_DESK_CHROME` only**. Do not detect `aarch64` and skip `ensure_browser` / `BrowserSurface`.
+10. **Hardware profiles are docs + example `desk.json` / `config.toml`, not code.** Rationale: inference is already per-child via `write_child_config` and `copy_auth`. A scheduler would imply shared GPUs, which we refuse. Jetson Chromium: **document `HERMES_DESK_CHROME` only**. Do not detect `aarch64` and skip `ensure_browser` / `BrowserSurface`.
 
 11. **`save_desk_config` becomes merge-in-place** before any cluster keys land. Rationale: `apply_listen()` currently nukes the file. Empty `cluster_token` in a POST is ignored unless `cluster_token_clear: true`.
 
-12. **MCP stays loopback to the owner deskd.** Cross-node teammates appear because `GET /v1/bots` on the owner merges (UI/MCP token), and `POST /v1/bots/{id}/dm` on the owner forwards. Rationale: `GROK_DESK_URL` is already `http://127.0.0.1:{port}` with the **local** UI token; children must not learn peer URLs or the cluster secret.
+12. **MCP stays loopback to the owner deskd.** Cross-node teammates appear because `GET /v1/bots` on the owner merges (UI/MCP token), and `POST /v1/bots/{id}/dm` on the owner forwards. Rationale: `HERMES_DESK_URL` is already `http://127.0.0.1:{port}` with the **local** UI token; children must not learn peer URLs or the cluster secret.
 
-13. **Fix MCP port to `LISTEN_PORT`.** Today `AcpClient._start_locked` injects `GROK_DESK_URL=http://127.0.0.1:{DESK_PORT}` (env default, L581), not `LISTEN_PORT`. If settings change the port, desk_team/browser MCP miss deskd. Federation makes that footgun louder.
+13. **Fix MCP port to `LISTEN_PORT`.** Today `AcpClient._start_locked` injects `HERMES_DESK_URL=http://127.0.0.1:{DESK_PORT}` (env default, L581), not `LISTEN_PORT`. If settings change the port, desk_team/browser MCP miss deskd. Federation makes that footgun louder.
 
 14. **GitHub repo contains no secrets.** `desk.json`, `auth.json`, runtime tokens, and any PAT stay on disk outside the tree. Examples use placeholders.
 
@@ -144,7 +144,7 @@ Phone / desktop browser
 
 17. **UI roster merge-by-id is mandatory.** `refreshBots()` must not `state.bots = j.bots`. Server `GET /v1/bots` omits `messages` on every list entry (local and remote). `GET /v1/bots/{id}` still returns the full profile including messages.
 
-18. **`cluster_token` is not a Grok/xAI API key.** Three secrets stay distinct: (a) UI Bearer in `$XDG_RUNTIME_DIR/grok-desk/token`, (b) mesh `cluster_token` in `desk.json` (deskd↔deskd on the LAN), (c) per-host xAI/cloud credentials in that node's `~/.grok/auth.json` **shared** into each bot's `GROK_HOME` by `copy_auth()` (symlink + `GROK_AUTH_PATH`; never a byte copy — that forks the OIDC refresh token and forces `/login` after sleep). Body and jetson bots typically **think** with Grok 4.6 cloud on *that* host's keys; brain bots may stay on local vLLM `qwen38`. Cross-node DM/proxy/SSE still needs `cluster_token` even when the remote bot has no local GPU model — brain (local qwen) messages a body bot, body answers with cloud Grok 4.6 on body. Do **not** drop mesh auth because “non-brain nodes use cloud tokens.” Do **not** implement live dual-token cluster rotation; v1 is one shared `cluster_token`, rotated from each host's localhost when needed.
+18. **`cluster_token` is not a Hermes/xAI API key.** Three secrets stay distinct: (a) UI Bearer in `$XDG_RUNTIME_DIR/hermes-desk/token`, (b) mesh `cluster_token` in `desk.json` (deskd↔deskd on the LAN), (c) per-host xAI/cloud credentials in that node's `~/.hermes/auth.json` **shared** into each bot's `HERMES_HOME` (symlinked `auth.json`; never a byte copy — that forks the OIDC refresh token and forces `/login` after sleep). Body and jetson bots typically **think** with Hermes 4.6 cloud on *that* host's keys; brain bots may stay on local vLLM `qwen38`. Cross-node DM/proxy/SSE still needs `cluster_token` even when the remote bot has no local GPU model — brain (local qwen) messages a body bot, body answers with cloud Hermes 4.6 on body. Do **not** drop mesh auth because “non-brain nodes use cloud tokens.” Do **not** implement live dual-token cluster rotation; v1 is one shared `cluster_token`, rotated from each host's localhost when needed.
 
 ---
 
@@ -155,7 +155,7 @@ Phone / desktop browser
 ```mermaid
 flowchart LR
   subgraph ui [Browser one origin]
-    SPA["ui/app.js + grokbot-ui.js"]
+    SPA["ui/app.js + hermesbot-ui.js"]
   end
 
   subgraph brain [teela-brain deskd]
@@ -179,15 +179,15 @@ flowchart LR
   end
 
   SPA -->|Bearer UI token SSE + REST| H1
-  C1 -->|X-Grok-Cluster-Token| H2
-  C1 -->|X-Grok-Cluster-Token| H3
+  C1 -->|X-Hermes-Cluster-Token| H2
+  C1 -->|X-Hermes-Cluster-Token| H3
   C2 -->|mesh hello / dm / events| H1
   C3 -->|mesh hello / dm / events| H1
 ```
 
 Each node also lists the other two as peers so opening the UI against body or jetson still shows the full hallway. Configuring those peer lists happens **on each host**, typically from `127.0.0.1` (SSH tunnel or a browser on that box).
 
-### 2. Config (`~/.grok/desk.json`)
+### 2. Config (`~/.hermes/desk.json`)
 
 Current live file:
 
@@ -233,7 +233,7 @@ Replace the two-key helpers. Seam for tests is `desk_config_path()` (already L71
 
 ```python
 def desk_config_path() -> Path:
-    return USER_GROK_HOME / "desk.json"   # already exists; tests patch this or GROK_HOME
+    return USER_AGENT_HOME / "desk.json"   # already exists; tests patch this or HERMES_DESK_HOME
 
 def read_desk_file() -> dict[str, Any]:
     """Raw JSON object, or {} if missing/corrupt. Never throws for callers."""
@@ -317,8 +317,8 @@ def _ui_role(self) -> str:
 def _authorize(self) -> str:
     """Return 'public' | 'ui' | 'ui_local' | 'cluster' | 'deny'. Never OR secrets."""
     path = urlparse(self.path).path
-    if path in ("/", "/index.html", "/app.js", "/styles.css", "/grokbot.css",
-                "/grokbot-ui.js") or path.startswith(("/ui/", "/assets/", "/vendor/")):
+    if path in ("/", "/index.html", "/app.js", "/styles.css", "/hermesbot.css",
+                "/hermesbot-ui.js") or path.startswith(("/ui/", "/assets/", "/vendor/")):
         return "public"
     if path.startswith("/v1/llm"):
         # loopback only — cluster header does not count
@@ -349,7 +349,7 @@ Then `do_*`: `role = self._authorize(); if role == "deny": return self._json(401
 
 `POST /v1/settings`: if `any(k in body for k in CLUSTER_KEYS)` and not `_require_loopback(role)` → **403, apply nothing**. Listen-only bodies (`CLUSTER_KEYS` absent) from a phone (`role == "ui"`) still 200.
 
-`_ui_ok()` is today's Bearer / `?token=` compare (`hmac.compare_digest`). `_cluster_ok()` compares `X-Grok-Cluster-Token` or `Authorization: Cluster <token>` the same way, and is false when the configured token is empty. `_cluster_header_present()` is true if either header looks like a cluster attempt, used to refuse bootstrap even with a wrong token.
+`_ui_ok()` is today's Bearer / `?token=` compare (`hmac.compare_digest`). `_cluster_ok()` compares `X-Hermes-Cluster-Token` or `Authorization: Cluster <token>` the same way, and is false when the configured token is empty. `_cluster_header_present()` is true if either header looks like a cluster attempt, used to refuse bootstrap even with a wrong token.
 
 | Path | UI Bearer / `?token=` | Cluster header | Unauthenticated |
 | --- | --- | --- | --- |
@@ -369,7 +369,7 @@ Then `do_*`: `role = self._authorize(); if role == "deny": return self._json(401
 
 Cluster header (one of):
 
-- `X-Grok-Cluster-Token: <token>`
+- `X-Hermes-Cluster-Token: <token>`
 - `Authorization: Cluster <token>`
 
 Compare with `hmac.compare_digest` after encoding both as UTF-8. Reject if configured token is empty. Never log the header or query `token=`; strip query strings in `Handler.log_message` (today L2688–2690 prints the raw request line, which includes `/v1/events?token=`).
@@ -610,7 +610,7 @@ Inbox jsonl grows `from_node`. Chat bubble text: `✉️ teela-brain@teela-brain
 
 #### `POST /v1/cluster/create` (UI Bearer, origin)
 
-Body: `{ "peer": "teela-jetson", "name": "...", "description": "...", "soul": "...", "model": "grok-4.6" }`.
+Body: `{ "peer": "teela-jetson", "name": "...", "description": "...", "soul": "...", "model": "hermes-4.6" }`.
 
 Origin looks up peer by name, `cluster.create_on_peer` → `POST {peer}/v1/bots` with cluster token (allowed; see matrix). Fail closed if peer offline or if `model` is not in that peer's `GET /v1/models`. Upsert `index[bot.id] = peer.name` from the response. Implemented in **PR-4**.
 
@@ -642,7 +642,7 @@ sequenceDiagram
   participant MCP as desk_mcp on owner
   participant SrcDesk as source deskd
   participant DstDesk as dest deskd
-  participant ACP as dest grok ACP
+  participant ACP as dest hermes ACP
   MCP->>SrcDesk: POST /v1/bots/{src}/dm (UI token, loopback)
   alt dest local
     SrcDesk->>SrcDesk: dest.deliver_dm(src, text)
@@ -726,7 +726,7 @@ Never proxy: `POST /v1/bots` (bare create — use `/v1/cluster/create`), `/v1/se
 `cluster.proxy` copies `_proxy_local_llm` (L2727–2795):
 
 - `HTTPConnection(peer_host, peer_port, timeout=timeout)`
-- Forward method, path, query with `token=` stripped; send `X-Grok-Cluster-Token`
+- Forward method, path, query with `token=` stripped; send `X-Hermes-Cluster-Token`
 - For POST/PUT: stream `handler.rfile` for `Content-Length` bytes; do not JSON-parse
 - Skip hop-by-hop headers (`transfer-encoding`, `connection`); let `_proxy_local_llm`'s skip set apply; **do** forward `ETag`, `X-Frame-Seq`, `X-View-Width`, `X-View-Height`, `Content-Disposition`
 - Stream 4KiB chunks to `wfile`. Do not `resp.read()` whole frames/zips
@@ -788,8 +788,8 @@ Keep the three tools. Behavioral changes come from deskd, not from the MCP clien
 Fix injector in `AcpClient._start_locked` L580–583:
 
 ```python
-{"name": "GROK_DESK_URL", "value": f"http://127.0.0.1:{LISTEN_PORT or DESK_PORT}"},
-{"name": "GROK_DESK_TOKEN", "value": desk_token()},
+{"name": "HERMES_DESK_URL", "value": f"http://127.0.0.1:{LISTEN_PORT or DESK_PORT}"},
+{"name": "HERMES_DESK_TOKEN", "value": desk_token()},
 ```
 
 Do **not** inject `cluster_token` into child env.
@@ -798,7 +798,7 @@ Do **not** inject `cluster_token` into child env.
 
 #### Roster badge
 
-`renderRoster()` (`ui/app.js` L1059) and `renderMobileHome` / `renderAgentRail` (`ui/grokbot-ui.js`) add a node chip when `b.node` is present:
+`renderRoster()` (`ui/app.js` L1059) and `renderMobileHome` / `renderAgentRail` (`ui/hermesbot-ui.js`) add a node chip when `b.node` is present:
 
 - Local: muted `teela-brain` or omitted if single-node (`peers` empty).
 - Remote: `teela-body` / `teela-jetson`.
@@ -835,8 +835,8 @@ Regression (PR-1 + PR-7): listen-only POST, even with `"cluster_token": ""` in t
 
 - Agent modal (`ui/index.html` L649–671) grows optional **Home node** `<select>`: default current `node_name`; other options from last `GET /v1/bots` `peers` with status ok (phones can create-on-node without editing the mesh).
 - If home node is local: existing `POST /v1/bots`. Model list from origin `GET /v1/models` (brain: includes `qwen38-27b`).
-- If home node is a peer: **repopulate** `#new-agent-model` from `GET /v1/cluster/peer-models?peer=` before submit; default `grok-4.6` when that id exists, else the peer's `default`. Origin `POST /v1/cluster/create`. Fail closed if the chosen model is not on the owner (server 400).
-- Hardcoded `<option>qwen38-27b` in `index.html` L654–658 and `userSettings.defaultModel || "qwen38-27b"` (`grokbot-ui.js` L1107) must not win when home node is body/jetson.
+- If home node is a peer: **repopulate** `#new-agent-model` from `GET /v1/cluster/peer-models?peer=` before submit; default `hermes-4.6` when that id exists, else the peer's `default`. Origin `POST /v1/cluster/create`. Fail closed if the chosen model is not on the owner (server 400).
+- Hardcoded `<option>qwen38-27b` in `index.html` L654–658 and `userSettings.defaultModel || "qwen38-27b"` (`hermesbot-ui.js` L1107) must not win when home node is body/jetson.
 - Delete (`deskDeleteBot` L1818): if `b.remote`, confirm text includes the node ("Deletes workspace on teela-jetson, not this machine"); origin DELETE proxies.
 - Model picker for an **existing** remote bot uses `b.models` from the owner profile (`renderModelMenu` already prefers `b.models`). `set_model` is proxied; `write_child_config` runs on the owner.
 
@@ -844,17 +844,17 @@ Remote bots are otherwise first-class: prompt, undo, clear, chats, soul, import/
 
 ### 11. Inference stays per-node (cognition ≠ mesh auth)
 
-Do not share vLLM. Brain's `/v1/llm` remains loopback-only to `GROK_DESK_LLM` default `http://127.0.0.1:8000`. `_authorize` never treats a cluster header as loopback.
+Do not share vLLM. Brain's `/v1/llm` remains loopback-only to `HERMES_DESK_LLM` default `http://127.0.0.1:8000`. `_authorize` never treats a cluster header as loopback.
 
 **Mixed cognition is the product, not a special case:**
 
 | Node | Typical cognition | Credentials | Mesh |
 | --- | --- | --- | --- |
-| teela-brain | Local vLLM `qwen38` (may also select cloud Grok) | loopback `/v1/llm`; optional `~/.grok/auth.json` | `cluster_token` in `desk.json` |
-| teela-body | **Grok 4.6 cloud** | that host's `~/.grok/auth.json` → `copy_auth()` **shares** it into `~/.grok/bots/<id>/grok-home` | same `cluster_token` |
-| teela-jetson | **Grok 4.6 cloud** | same pattern on the Jetson | same `cluster_token` |
+| teela-brain | Local vLLM `qwen38` (may also select cloud Hermes) | loopback `/v1/llm`; optional `~/.hermes/auth.json` | `cluster_token` in `desk.json` |
+| teela-body | **Hermes 4.6 cloud** | that host's `~/.hermes/auth.json` → `copy_auth()` **shares** it into `~/.hermes/bots/<id>/hermes-home` | same `cluster_token` |
+| teela-jetson | **Hermes 4.6 cloud** | same pattern on the Jetson | same `cluster_token` |
 
-A brain bot (local qwen) `message_teammate`s a body bot; origin forwards `POST /v1/cluster/dm`; body's ACP child answers with **Grok 4.6 cloud on body's keys/hardware**. Cross-node chat does **not** require the remote node to run a local GPU model. Cloud keys never go in git and are **not** `cluster_token`. Do not “simplify” mesh auth away because body/jetson use cloud tokens.
+A brain bot (local qwen) `message_teammate`s a body bot; origin forwards `POST /v1/cluster/dm`; body's ACP child answers with **Hermes 4.6 cloud on body's keys/hardware**. Cross-node chat does **not** require the remote node to run a local GPU model. Cloud keys never go in git and are **not** `cluster_token`. Do not “simplify” mesh auth away because body/jetson use cloud tokens.
 
 `write_child_config` rewrite of `:8000/:8080` → local deskd `/v1/llm` is correct on every node: if body later runs a CUDA vLLM on localhost, *body's* deskd proxies it. Jetson can later point a model `base_url` at a local llama.cpp. No cluster code changes.
 
@@ -862,9 +862,9 @@ A brain bot (local qwen) `message_teammate`s a body bot; origin forwards `POST /
 
 ### 12. Clone / install (same repo, different config)
 
-Repo to publish: `Colornosteela-cloud/Grok-desk`. There is **no git repo yet** in `/home/roni/grok-desk`. Bootstrap is PR-0.
+Repo to publish: `Colornosteela-cloud/Hermes-desk`. There is **no git repo yet** in `/home/roni/hermes-desk`. Bootstrap is PR-0.
 
-Shared requirements: Python 3.10+, `grok` CLI on `PATH` (`GROK_BIN`, default `~/.local/bin/grok`), `./start.sh`. No pip framework. Do not assume x86_64, Intel XPU, or Docker. Tests: `python3 -m unittest`.
+Shared requirements: Python 3.10+, `hermes` CLI on `PATH` (`HERMES_BIN`, default `~/.local/bin/hermes`), `./start.sh`. No pip framework. Do not assume x86_64, Intel XPU, or Docker. Tests: `python3 -m unittest`.
 
 Per-host examples (docs, not a scheduler):
 
@@ -872,31 +872,31 @@ Per-host examples (docs, not a scheduler):
 
 - `desk.json`: `node_name=teela-brain`, `listen_host=10.0.0.10`, `listen_port=8742`, peers `http://10.0.0.xx:8742` / `http://10.0.0.yy:8742` in git examples — **replace xx/yy with real RFC1918 IPs at install**.
 - Mesh config: open Settings from `http://127.0.0.1:8742/` (not from the phone), generate token, add peers, self-test.
-- `~/.grok/config.toml`: default `qwen38-27b`, `base_url=http://127.0.0.1:8000/v1` (rewritten to deskd `/v1/llm`).
+- `~/.hermes/config.toml`: default `qwen38-27b`, `base_url=http://127.0.0.1:8000/v1` (rewritten to deskd `/v1/llm`).
 - vLLM: do not bounce; keep TP=2, max-model-len 262144, served name `qwen38`.
 - UI: phones keep using `http://10.0.0.10:8742/` for chat; they will see a Cluster tab banner “this host only / configure from localhost”.
 
 **teela-body** — clone repo, `./start.sh`.
 
-- Install NVIDIA driver/CUDA only if/when local vLLM is wired; **v1 cognition is Grok 4.6 cloud**.
-- `~/.grok/auth.json` from `grok login` **on that box** (not copied from git).
-- `config.toml` default `grok-4.6` (cloud, empty `base_url`).
+- Install NVIDIA driver/CUDA only if/when local vLLM is wired; **v1 cognition is Hermes 4.6 cloud**.
+- `~/.hermes/auth.json` from `hermes login` **on that box** (not copied from git).
+- `config.toml` default `hermes-4.6` (cloud, empty `base_url`).
 - `desk.json`: `node_name=teela-body`, `listen_host` = that box's real RFC1918 IP (example placeholder `10.0.0.xx`), same **cluster_token** (mesh, not the xAI key), peers `http://10.0.0.10:8742` and jetson. Cloud `auth.json` stays on this box.
 - Repeat Cluster tab on **this** host (localhost). Self-test must show reverse hello to brain.
 - Optional later: CUDA vLLM on `:8000`; existing alias/proxy path applies unchanged.
 
 **teela-jetson** — ARM/Jetson.
 
-- Install docs: system Python, aarch64 `grok` binary, no Intel XPU container, no `pip install torch` x86 wheels, **do not install x86 Playwright**.
-- `surfaces.py` L26–29 defaults `GROK_DESK_CHROME` to `~/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome`. That path will not exist on Orin. In `docs/hosts/teela-jetson.md` set:
+- Install docs: system Python, aarch64 `hermes` binary, no Intel XPU container, no `pip install torch` x86 wheels, **do not install x86 Playwright**.
+- `surfaces.py` L26–29 defaults `HERMES_DESK_CHROME` to `~/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome`. That path will not exist on Orin. In `docs/hosts/teela-jetson.md` set:
 
   ```bash
-  export GROK_DESK_CHROME=/usr/bin/chromium-browser
+  export HERMES_DESK_CHROME=/usr/bin/chromium-browser
   # or: /usr/bin/chromium
   ```
 
   `ensure_browser` already swallows start failures (`deskd.py` L1932–1942); chat+DM work with no chrome. Do not block federation on the browser surface. **Do not add code that detects aarch64/Jetson and disables `BrowserSurface`.** Docs only.
-- Same cloud Grok 4.6 profile as body (`auth.json` on this box, not `cluster_token`).
+- Same cloud Hermes 4.6 profile as body (`auth.json` on this box, not `cluster_token`).
 - `desk.json`: `node_name=teela-jetson`, `listen_host` = real RFC1918 IP (example placeholder `10.0.0.yy`), same **cluster_token**, peers `http://10.0.0.10:8742` and body.
 - Repeat Cluster tab on this host.
 
@@ -981,9 +981,9 @@ No SQL. On-disk additions:
 
 | Path | Change |
 | --- | --- |
-| `~/.grok/desk.json` | `node_name`, `cluster_token`, `peers`; merge-safe; empty token does not clear |
-| `~/.grok/bots/<id>/inbox/messages.jsonl` | optional `from_node` field on new rows |
-| `$XDG_RUNTIME_DIR/grok-desk/token` | unchanged (UI token, not cluster) |
+| `~/.hermes/desk.json` | `node_name`, `cluster_token`, `peers`; merge-safe; empty token does not clear |
+| `~/.hermes/bots/<id>/inbox/messages.jsonl` | optional `from_node` field on new rows |
+| `$XDG_RUNTIME_DIR/hermes-desk/token` | unchanged (UI token, not cluster) |
 
 No migration job. Missing cluster keys ⇒ single-node behavior identical to today. `load_existing()` (L2616) unchanged: still only scans local `PROFILE.toml` dirs.
 
@@ -993,7 +993,7 @@ Atomic write: write `desk.json.tmp` then `os.replace` to avoid torn JSON on rebo
 
 ## Alternatives Considered
 
-### A. Shared NFS/sqlite of `~/.grok/bots` + one deskd
+### A. Shared NFS/sqlite of `~/.hermes/bots` + one deskd
 
 - **Pros:** Single roster, no merge.
 - **Cons:** ACP children, Chromium, and vLLM still have to run next to the files. NFS-locking `chat.jsonl` across three architectures is worse than HTTP. Does not use body/jetson GPUs unless deskd is also cloned — which is federation anyway.
@@ -1071,10 +1071,10 @@ Atomic write: write `desk.json.tmp` then `os.replace` to avoid torn JSON on rebo
 
 1. **Brain only, no peers.** Merge-safe config + empty peers = current product. Regression gate.
 2. **Enable cluster_token on brain from 127.0.0.1**, still no peers. `/v1/cluster/*` now 401/403 without header, 200 hello with header. Confirm `/v1/llm` and ACP still loopback. Confirm a phone cannot GET the token or POST peers.
-3. **Stand up teela-body** with cloud Grok 4.6, same token, peer URL to brain (and vice versa). Do not touch vLLM. Repeat Cluster tab on body localhost. Self-test reverse hello.
-4. **Verify** from phone → brain origin: body bot appears, prompt streams, DM brain→body < 200ms, browser frame of body bot is body's Chromium. Creating a body bot from the phone uses home-node + peer catalog (`grok-4.6`), not `qwen38-27b`.
-5. **teela-jetson** last (ARM unknowns). Set `GROK_DESK_CHROME`. If Chromium surface fails, chat+DM still ship.
-6. **Rollback:** `peers: []` with `peers_loaded: true` from localhost, or empty `peers` in `desk.json` and restart. Local bots untouched. Optional `GROK_DESK_CLUSTER=0` to ignore peers while debugging.
+3. **Stand up teela-body** with cloud Hermes 4.6, same token, peer URL to brain (and vice versa). Do not touch vLLM. Repeat Cluster tab on body localhost. Self-test reverse hello.
+4. **Verify** from phone → brain origin: body bot appears, prompt streams, DM brain→body < 200ms, browser frame of body bot is body's Chromium. Creating a body bot from the phone uses home-node + peer catalog (`hermes-4.6`), not `qwen38-27b`.
+5. **teela-jetson** last (ARM unknowns). Set `HERMES_DESK_CHROME`. If Chromium surface fails, chat+DM still ship.
+6. **Rollback:** `peers: []` with `peers_loaded: true` from localhost, or empty `peers` in `desk.json` and restart. Local bots untouched. Optional `HERMES_DESK_CLUSTER=0` to ignore peers while debugging.
 
 Do not bounce brain vLLM at any step. Do not change `max-model-len`.
 
@@ -1095,9 +1095,9 @@ Do not bounce brain vLLM at any step. Do not change `max-model-len`.
 | MCP still on `DESK_PORT` | Medium | Switch injector to `LISTEN_PORT` in PR-1 |
 | Bot id collision | Low | Local wins; log warning |
 | Duplicate `node_name` / self-peer / hello name mismatch | Low | Reject self-peer URL; self-test warnings |
-| Jetson Chromium defaults to linux64 Playwright | Medium | Document `GROK_DESK_CHROME` only; do **not** detect aarch64 and disable BrowserSurface; chat path independent |
+| Jetson Chromium defaults to linux64 Playwright | Medium | Document `HERMES_DESK_CHROME` only; do **not** detect aarch64 and disable BrowserSurface; chat path independent |
 | Import/export timeouts wrong if copied from ACP 600s | Medium | Explicit table: prompt ACK 10s, import 120s, export 60s |
-| Dual deskd tests share `~/.grok` / chrome ports | Medium | Isolated `GROK_HOME`, `GROK_DESKS`, `XDG_RUNTIME_DIR`, ports (PR-4) |
+| Dual deskd tests share `~/.hermes` / chrome ports | Medium | Isolated `HERMES_DESK_HOME`, `HERMES_DESKS`, `XDG_RUNTIME_DIR`, ports (PR-4) |
 | Peer URL IP churn (DHCP) | Medium | Static DHCP; RFC1918 literals only; no mDNS in v1 |
 | Operators paste GitHub PAT into repo | High | `.gitignore`; review; never write PAT from chat into artifacts |
 
@@ -1109,44 +1109,44 @@ User-final. Do not reopen in implementation.
 
 1. **Peer URLs.** Git examples use placeholders `http://10.0.0.xx:8742` (body) and `http://10.0.0.yy:8742` (jetson). Fill real RFC1918 literals at install on each host. Brain stays `10.0.0.10:8742`. No hostnames in v1 (no DNS/IMDS). Loopback `127.0.0.1` remains allowed for dual-process tests only.
 
-2. **Cluster token vs cloud API keys (user said “cloud tokens” on non-brain).** Those are different secrets. `cluster_token` is deskd↔deskd mesh auth in `desk.json` and is **still required** so brain can proxy/DM/SSE to body and jetson even when those bots' *cognition* is Grok 4.6 cloud. Inference credentials stay per-node: brain may use local vLLM `qwen38` (and/or cloud); body and jetson typically use Grok 4.6 cloud via that host's `~/.grok/auth.json` / child `GROK_HOME`. Cloud keys never go in git and are not `cluster_token`. Cross-node chat does not require the remote node to run a local GPU model. **No live dual-token cluster rotation** — v1 is one shared `cluster_token`, rotated from each host's localhost when needed. Key Decision 18 exists so nobody later drops mesh auth because body is on cloud Grok.
+2. **Cluster token vs cloud API keys (user said “cloud tokens” on non-brain).** Those are different secrets. `cluster_token` is deskd↔deskd mesh auth in `desk.json` and is **still required** so brain can proxy/DM/SSE to body and jetson even when those bots' *cognition* is Hermes 4.6 cloud. Inference credentials stay per-node: brain may use local vLLM `qwen38` (and/or cloud); body and jetson typically use Hermes 4.6 cloud via that host's `~/.hermes/auth.json` / child `HERMES_DESK_HOME`. Cloud keys never go in git and are not `cluster_token`. Cross-node chat does not require the remote node to run a local GPU model. **No live dual-token cluster rotation** — v1 is one shared `cluster_token`, rotated from each host's localhost when needed. Key Decision 18 exists so nobody later drops mesh auth because body is on cloud Hermes.
 
-3. **Create-on-node is in this MVP.** Home node picker + peer model catalog, default `grok-4.6` off-brain. Keep PR-4 API (`/v1/cluster/create`, `/v1/cluster/peer-models`) and PR-7 UI.
+3. **Create-on-node is in this MVP.** Home node picker + peer model catalog, default `hermes-4.6` off-brain. Keep PR-4 API (`/v1/cluster/create`, `/v1/cluster/peer-models`) and PR-7 UI.
 
-4. **Jetson Chromium.** Document `export GROK_DESK_CHROME=/usr/bin/chromium-browser` (or `/usr/bin/chromium`) in `docs/hosts/teela-jetson.md`. Do **not** detect aarch64 and disable `BrowserSurface` in code. `ensure_browser` already swallows start failures; chat+DM work without chrome.
+4. **Jetson Chromium.** Document `export HERMES_DESK_CHROME=/usr/bin/chromium-browser` (or `/usr/bin/chromium`) in `docs/hosts/teela-jetson.md`. Do **not** detect aarch64 and disable `BrowserSurface` in code. `ensure_browser` already swallows start failures; chat+DM work without chrome.
 
 ---
 
 ## References
 
-- Control plane: `/home/roni/grok-desk/deskd/deskd.py` (`Handler`, `Bot`, `AcpClient`, `load_desk_config`, `save_desk_config`, `desk_config_path`, `_auth_ok`, `_sse`, `emit` L198–201 disconnect, `_proxy_local_llm`, `create_bot`, `deliver_dm`, `do_POST` L3049–3056 always-JSON, no `do_PATCH`)
-- Teammate MCP: `/home/roni/grok-desk/deskd/desk_mcp.py`
-- Browser MCP: `/home/roni/grok-desk/deskd/browser_mcp.py`
-- Surfaces: `/home/roni/grok-desk/deskd/surfaces.py` (`GROK_DESK_CHROME` L26–29), `session_mirror.py`, `conv_io.py`
-- UI: `/home/roni/grok-desk/ui/app.js` (`renderRoster`, `refreshBots` L1081, `selectBot`, `connectEvents`, `deskSaveAccess`, `api()` always `r.json()`, composer prompt), `/home/roni/grok-desk/ui/grokbot-ui.js` (settings L1435–1439, rail, create default `qwen38-27b` L1107), `/home/roni/grok-desk/ui/index.html`
-- Launch: `/home/roni/grok-desk/start.sh`
-- Live listen config: `/home/roni/.grok/desk.json`
-- Product README (single-node, to be expanded): `/home/roni/grok-desk/README.md`
+- Control plane: `/home/roni/hermes-desk/deskd/deskd.py` (`Handler`, `Bot`, `AcpClient`, `load_desk_config`, `save_desk_config`, `desk_config_path`, `_auth_ok`, `_sse`, `emit` L198–201 disconnect, `_proxy_local_llm`, `create_bot`, `deliver_dm`, `do_POST` L3049–3056 always-JSON, no `do_PATCH`)
+- Teammate MCP: `/home/roni/hermes-desk/deskd/desk_mcp.py`
+- Browser MCP: `/home/roni/hermes-desk/deskd/browser_mcp.py`
+- Surfaces: `/home/roni/hermes-desk/deskd/surfaces.py` (`HERMES_DESK_CHROME` L26–29), `session_mirror.py`, `conv_io.py`
+- UI: `/home/roni/hermes-desk/ui/app.js` (`renderRoster`, `refreshBots` L1081, `selectBot`, `connectEvents`, `deskSaveAccess`, `api()` always `r.json()`, composer prompt), `/home/roni/hermes-desk/ui/hermesbot-ui.js` (settings L1435–1439, rail, create default `qwen38-27b` L1107), `/home/roni/hermes-desk/ui/index.html`
+- Launch: `/home/roni/hermes-desk/start.sh`
+- Live listen config: `/home/roni/.hermes/desk.json`
+- Product README (single-node, to be expanded): `/home/roni/hermes-desk/README.md`
 
 ---
 
 ## PR Plan
 
-Stacked sequence for the new GitHub repo `Colornosteela-cloud/Grok-desk`. Each step is independently reviewable. No secrets in any commit. Tests are stdlib `unittest` (`python3 -m unittest`).
+Stacked sequence for the new GitHub repo `Colornosteela-cloud/Hermes-desk`. Each step is independently reviewable. No secrets in any commit. Tests are stdlib `unittest` (`python3 -m unittest`).
 
 ### PR-0 — Repo bootstrap
 
-- **Title:** `chore: bootstrap Grok-desk git repo and ignore secrets`
-- **Files:** `.gitignore` (`__pycache__/`, `*.pyc`, `.env`, `auth.json`, `desk.json`, runtime token paths), `README.md` (keep current slice description; add "do not commit `~/.grok/`"), optional `LICENSE` if the owner picks one
+- **Title:** `chore: bootstrap Hermes-desk git repo and ignore secrets`
+- **Files:** `.gitignore` (`__pycache__/`, `*.pyc`, `.env`, `auth.json`, `desk.json`, runtime token paths), `README.md` (keep current slice description; add "do not commit `~/.hermes/`"), optional `LICENSE` if the owner picks one
 - **Depends on:** none
-- **Changes:** Initialize git, set author identity to the owner's GitHub name/email **without storing a PAT in the tree**. Remote `git@github.com:Colornosteela-cloud/Grok-desk.git` (or HTTPS with credential helper — PAT stays in the agent/user environment, never in files). Snapshot the existing working desk (deskd + ui + start.sh) as the initial commit.
+- **Changes:** Initialize git, set author identity to the owner's GitHub name/email **without storing a PAT in the tree**. Remote `git@github.com:Colornosteela-cloud/Hermes-desk.git` (or HTTPS with credential helper — PAT stays in the agent/user environment, never in files). Snapshot the existing working desk (deskd + ui + start.sh) as the initial commit.
 
 ### PR-1 — Merge-safe desk.json + LISTEN_PORT for MCP
 
 - **Title:** `fix: preserve unknown desk.json keys and point MCP at LISTEN_PORT`
 - **Files:** `deskd/deskd.py` (`read_desk_file`, `patch_desk_config`, `save_desk_config`, `apply_listen`, `AcpClient._start_locked` env, `log_message` query redact), new `tests/test_desk_config.py`
 - **Depends on:** PR-0
-- **Changes:** Listen-only `POST /v1/settings` must not drop extra keys. **Even if the JSON contains `"cluster_token": ""`, ignore it** unless `cluster_token_clear: true` (forward-compat with PR-2/PR-7). Inject `GROK_DESK_URL=http://127.0.0.1:{LISTEN_PORT}`. Tests: stdlib `unittest`; patch `desk_config_path()` or set `GROK_HOME` to a temp dir (do not assume pytest, do not assign `DESK_CONFIG_PATH` as a test seam). Regression: single-node LAN listen + local vLLM proxy untouched.
+- **Changes:** Listen-only `POST /v1/settings` must not drop extra keys. **Even if the JSON contains `"cluster_token": ""`, ignore it** unless `cluster_token_clear: true` (forward-compat with PR-2/PR-7). Inject `HERMES_DESK_URL=http://127.0.0.1:{LISTEN_PORT}`. Tests: stdlib `unittest`; patch `desk_config_path()` or set `HERMES_DESK_HOME` to a temp dir (do not assume pytest, do not assign `DESK_CONFIG_PATH` as a test seam). Regression: single-node LAN listen + local vLLM proxy untouched.
 
 ### PR-2 — Cluster config object, hello/auth, **full deny matrix**
 
@@ -1171,9 +1171,9 @@ Stacked sequence for the new GitHub repo `Colornosteela-cloud/Grok-desk`. Each s
 
   ```bash
   # process A
-  GROK_HOME=/tmp/desk-a GROK_DESKS=/tmp/desks-a XDG_RUNTIME_DIR=/tmp/run-a GROK_DESK_PORT=18742
+  HERMES_DESK_HOME=/tmp/desk-a HERMES_DESKS=/tmp/desks-a XDG_RUNTIME_DIR=/tmp/run-a HERMES_DESK_PORT=18742
   # process B
-  GROK_HOME=/tmp/desk-b GROK_DESKS=/tmp/desks-b XDG_RUNTIME_DIR=/tmp/run-b GROK_DESK_PORT=18743
+  HERMES_DESK_HOME=/tmp/desk-b HERMES_DESKS=/tmp/desks-b XDG_RUNTIME_DIR=/tmp/run-b HERMES_DESK_PORT=18743
   ```
 
   Distinct homes so `desk.json`, bots, UI tokens, and hashed chrome/www ports do not collide. Tests: 304 frame, zip export, 80 MB import not parsed on origin, PUT soul; `bot_id_from_path` for `/v1/bots/{id}/chats/{cid}/open`, `/browser/frame`, `/v1/agent/{id}/prompt`, `/v1/workspaces/{wid}/raw`, `/v1/control/{wid}` (never `parts[-1]`).
@@ -1195,16 +1195,16 @@ Stacked sequence for the new GitHub repo `Colornosteela-cloud/Grok-desk`. Each s
 ### PR-7 — Settings Cluster tab + roster badges + home node
 
 - **Title:** `feat: cluster settings, node badges, create-on-node`
-- **Files:** `ui/index.html` (Cluster tab copy “this host only”, home-node select, write-only token, desk hint); `ui/grokbot-ui.js` (form populate/save omits empty token, loopback gating, peer-models when home node changes, rail/mobile badge); `ui/app.js` (`renderRoster`, `renderConversation`, `deskSaveAccess`, `deskCreateBot` → `/v1/cluster/create` when remote, delete confirm, `mergeBot` if not already in PR-3); `ui/grokbot.css` (chip); `tests/test_desk_config.py` extended: listen-only POST with `"cluster_token":""`
+- **Files:** `ui/index.html` (Cluster tab copy “this host only”, home-node select, write-only token, desk hint); `ui/hermesbot-ui.js` (form populate/save omits empty token, loopback gating, peer-models when home node changes, rail/mobile badge); `ui/app.js` (`renderRoster`, `renderConversation`, `deskSaveAccess`, `deskCreateBot` → `/v1/cluster/create` when remote, delete confirm, `mergeBot` if not already in PR-3); `ui/hermesbot.css` (chip); `tests/test_desk_config.py` extended: listen-only POST with `"cluster_token":""`
 - **Depends on:** PR-2 (settings API), PR-3 (roster fields + mergeBot), **PR-4 (`/v1/cluster/create` + `/v1/cluster/peer-models`)**
-- **Changes:** Token field type=password, never GET. Badges on hallway, mobile list, header. Create default local; remote home node loads peer catalog and defaults `grok-4.6`.
+- **Changes:** Token field type=password, never GET. Badges on hallway, mobile list, header. Create default local; remote home node loads peer catalog and defaults `hermes-4.6`.
 
 ### PR-8 — Clone/install docs for the three hosts
 
 - **Title:** `docs: LAN cluster install for teela-brain, teela-body, teela-jetson`
 - **Files:** `README.md`, `docs/cluster.md`, `docs/hosts/teela-brain.md`, `docs/hosts/teela-body.md`, `docs/hosts/teela-jetson.md`, example `examples/desk.teela-brain.json` **without** a real token
 - **Depends on:** PR-0; should merge after PR-7 so the documented Settings tab exists
-- **Changes:** Explicit "no x86_64 / Intel XPU docker on Jetson". Cite `GROK_DESK_CHROME` vs Playwright `chrome-linux64`; **do not** add aarch64 BrowserSurface detection in code. Example `desk.json` uses `http://10.0.0.10:8742` (brain) and `http://10.0.0.xx:8742` / `http://10.0.0.yy:8742` placeholders — fill real IPs at install; **no** real `cluster_token` or `auth.json`. Body/jetson: Grok 4.6 cloud via that host's `auth.json` (not the mesh secret). Brain: do not bounce vLLM, keep 262k. Mesh config from each host's localhost; phones do not edit the mesh. Hardware profiles are documentation only. Note `cluster_token` ≠ xAI key.
+- **Changes:** Explicit "no x86_64 / Intel XPU docker on Jetson". Cite `HERMES_DESK_CHROME` vs Playwright `chrome-linux64`; **do not** add aarch64 BrowserSurface detection in code. Example `desk.json` uses `http://10.0.0.10:8742` (brain) and `http://10.0.0.xx:8742` / `http://10.0.0.yy:8742` placeholders — fill real IPs at install; **no** real `cluster_token` or `auth.json`. Body/jetson: Hermes 4.6 cloud via that host's `auth.json` (not the mesh secret). Brain: do not bounce vLLM, keep 262k. Mesh config from each host's localhost; phones do not edit the mesh. Hardware profiles are documentation only. Note `cluster_token` ≠ xAI key.
 
 ### PR-9 — Soak notes and leftover log redaction
 

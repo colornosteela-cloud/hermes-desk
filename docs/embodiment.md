@@ -12,15 +12,15 @@ Phase 1 (this change) is **body mirror only**. No new Qwen tools, no autonomous 
 Qwen3.8-Flash-Next (llama.cpp :8080)
         │  OpenAI chat + tools via deskd /v1/llm
         ▼
-Grok ACP  (grok agent stdio)
+Hermes ACP  (hermes acp)
         │  MCP bot_desktop__robot_{status,pose,joint,motion}
         ▼
 deskd MiniOS twin  (robot_sim.py + ui/robot-simulator.html)
         │  commanded joints + live 3D overlay
         ▼
 motion.dispatch
-   STATIC  → POST /v1/cluster/robot/execute  → teela-jetson (servos; stub until GROK_DESK_MOTORS=1)
-   DYNAMIC → POST /v1/cluster/robot/wbc      → teela-body   (WBC; stub until GROK_DESK_WBC=1)
+   STATIC  → POST /v1/cluster/robot/execute  → teela-jetson (servos; stub until HERMES_DESK_MOTORS=1)
+   DYNAMIC → POST /v1/cluster/robot/wbc      → teela-body   (WBC; stub until HERMES_DESK_WBC=1)
    SAFETY  → both (E-stop)
 ```
 
@@ -158,7 +158,7 @@ PHYSICAL (encoders / MiniOS live overlay / IMU later)
 
 | Layer | Owns |
 | --- | --- |
-| Class A reflex | Jetson motor daemon / E-stop. Independent of Qwen. Stub until `GROK_DESK_MOTORS=1`. |
+| Class A reflex | Jetson motor daemon / E-stop. Independent of Qwen. Stub until `HERMES_DESK_MOTORS=1`. |
 | Class B verified skill | MiniOS `robot_sim.apply` joint limits + `motion.dispatch` STATIC. |
 | Class C novel | Future MuJoCo rollout + gate. Qwen cannot skip. |
 | Qwen | Intent only. No shell, no I2C, no PWM, no raw servo tools. |

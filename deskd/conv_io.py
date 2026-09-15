@@ -1,7 +1,7 @@
-"""Conversation export/import for Grok Desk.
+"""Conversation export/import for Hermes Desk.
 
-Understands native Grok Desk JSON, ChatGPT data-export trees, Claude
-chat_messages, OpenAI {role,content} arrays, grok.com / xAI account dumps,
+Understands native Hermes Desk JSON, ChatGPT data-export trees, Claude
+chat_messages, OpenAI {role,content} arrays, hermes.com / xAI account dumps,
 markdown transcripts, jsonl, and ZIP wrappers of those files.
 """
 
@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 MAX_CONVERSATIONS = 50
-VISIBLE_ROLES = {"user", "assistant", "system", "human", "grok", "you", "model"}
+VISIBLE_ROLES = {"user", "assistant", "system", "human", "hermes", "you", "model"}
 
 
 def now_ts() -> float:
@@ -93,7 +93,7 @@ def canon_role(role: str | None) -> str:
     r = (role or "").strip().lower()
     if r in ("user", "human", "you", "customer", "prompter"):
         return "user"
-    if r in ("assistant", "grok", "model", "bot", "ai", "chatgpt", "claude", "gpt"):
+    if r in ("assistant", "hermes", "model", "bot", "ai", "chatgpt", "claude", "gpt"):
         return "assistant"
     if r in ("system", "developer"):
         return "system"
@@ -206,7 +206,7 @@ def claude_linear(conv: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def grok_linear(item: dict[str, Any]) -> list[dict[str, Any]]:
+def agent_linear(item: dict[str, Any]) -> list[dict[str, Any]]:
     conv = item.get("conversation") if isinstance(item.get("conversation"), dict) else item
     responses = item.get("responses")
     if not isinstance(responses, list):
@@ -261,10 +261,10 @@ def openai_linear(obj: dict[str, Any] | list[Any]) -> list[dict[str, Any]]:
 
 
 MD_SPLIT = re.compile(
-    r"(?im)^(?:#{1,3}\s+)?(?:\*\*)?(user|you|human|assistant|chatgpt|claude|grok|system|model)(?:\*\*)?\s*:?\s*$"
+    r"(?im)^(?:#{1,3}\s+)?(?:\*\*)?(user|you|human|assistant|chatgpt|claude|hermes|system|model)(?:\*\*)?\s*:?\s*$"
 )
 MD_INLINE = re.compile(
-    r"(?im)^(?:#{1,3}\s+)?(?:\*\*)?(user|you|human|assistant|chatgpt|claude|grok|system|model)(?:\*\*)?\s*:\s+(.*)$"
+    r"(?im)^(?:#{1,3}\s+)?(?:\*\*)?(user|you|human|assistant|chatgpt|claude|hermes|system|model)(?:\*\*)?\s*:\s+(.*)$"
 )
 
 
@@ -332,9 +332,9 @@ def from_object(data: Any, filename: str = "") -> tuple[list[dict[str, Any]], st
     """Return (messages, detected_source, conversation_count)."""
     name = (filename or "").lower()
 
-    if isinstance(data, dict) and data.get("source") == "grok-desk":
+    if isinstance(data, dict) and data.get("source") == "hermes-desk":
         msgs = openai_linear(data)
-        return msgs, "grok-desk", 1
+        return msgs, "hermes-desk", 1
 
     if isinstance(data, dict) and isinstance(data.get("mapping"), dict):
         title = data.get("title") or filename or "ChatGPT conversation"
@@ -374,21 +374,21 @@ def from_object(data: Any, filename: str = "") -> tuple[list[dict[str, Any]], st
             bundled = []
             for item in convs[:MAX_CONVERSATIONS]:
                 conv = item.get("conversation") if isinstance(item.get("conversation"), dict) else item
-                title = (conv or {}).get("title") or "Grok conversation"
-                bundled.extend(titled(title, "Grok", grok_linear(item)))
-            return bundled, "grok", min(len(convs), MAX_CONVERSATIONS)
+                title = (conv or {}).get("title") or "Hermes conversation"
+                bundled.extend(titled(title, "Hermes", agent_linear(item)))
+            return bundled, "hermes", min(len(convs), MAX_CONVERSATIONS)
         bundled = []
         for item in convs[:MAX_CONVERSATIONS]:
             if not isinstance(item, dict):
                 continue
             title = item.get("title") or "conversation"
-            msgs = grok_linear(item) or openai_linear(item)
-            src = "grok" if item.get("messages") else "openai"
+            msgs = agent_linear(item) or openai_linear(item)
+            src = "hermes" if item.get("messages") else "openai"
             bundled.extend(titled(title, src, msgs))
-        return bundled, "grok", min(len(convs), MAX_CONVERSATIONS)
+        return bundled, "hermes", min(len(convs), MAX_CONVERSATIONS)
 
     if isinstance(data, dict) and isinstance(data.get("conversation"), list):
-        # userscript grok export: {platform: grok, conversation: [{speaker, content}]}
+        # userscript hermes export: {platform: hermes, conversation: [{speaker, content}]}
         msgs = []
         for m in data["conversation"]:
             if not isinstance(m, dict):
@@ -397,7 +397,7 @@ def from_object(data: Any, filename: str = "") -> tuple[list[dict[str, Any]], st
             if nm:
                 msgs.append(nm)
         if msgs:
-            return msgs, "grok", 1
+            return msgs, "hermes", 1
 
     if isinstance(data, dict) and isinstance(data.get("messages"), list):
         return openai_linear(data), "openai", 1
@@ -407,7 +407,7 @@ def from_object(data: Any, filename: str = "") -> tuple[list[dict[str, Any]], st
     ):
         return openai_linear(data), "openai", 1
 
-    if "prod-grok" in name or name.endswith("backend.json"):
+    if "prod-hermes" in name or name.endswith("backend.json"):
         if isinstance(data, dict):
             return from_object({"conversations": data.get("conversations") or []}, filename)
 
@@ -439,7 +439,7 @@ def from_zip(raw: bytes, filename: str = "") -> tuple[list[dict[str, Any]], str,
                 for key in (
                     "conversations.json",
                     "claude",
-                    "prod-grok-backend",
+                    "prod-hermes-backend",
                     "chat.json",
                     "messages.json",
                 )
@@ -499,7 +499,7 @@ def from_text(text: str, filename: str = "") -> tuple[list[dict[str, Any]], str,
 # Export
 # ---------------------------------------------------------------------------
 
-EXPORT_FORMATS = ("json", "md", "chatgpt", "claude", "openai", "grok", "system")
+EXPORT_FORMATS = ("json", "md", "chatgpt", "claude", "openai", "hermes", "system")
 
 SYSTEM_SKIP_DIRS = {
     "browser-profile",
@@ -559,7 +559,7 @@ def export_payload(bot: Any, fmt: str) -> tuple[bytes, str, str]:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
     if fmt == "json":
         body = {
-            "source": "grok-desk",
+            "source": "hermes-desk",
             "version": 1,
             "exported_at": iso(),
             "bot": {
@@ -574,7 +574,7 @@ def export_payload(bot: Any, fmt: str) -> tuple[bytes, str, str]:
     if fmt == "md":
         lines = [
             f"# Conversation with {name}",
-            f"Exported {iso()} · Grok Desk",
+            f"Exported {iso()} · Hermes Desk",
             "",
         ]
         labels = {"user": "User", "assistant": "Assistant", "system": "System"}
@@ -601,9 +601,9 @@ def export_payload(bot: Any, fmt: str) -> tuple[bytes, str, str]:
     if fmt == "claude":
         raw = json.dumps(_as_claude(name, msgs), indent=2, ensure_ascii=False).encode("utf-8")
         return raw, f"{slug}-claude-{stamp}.json", "application/json"
-    if fmt == "grok":
-        raw = json.dumps(_as_grok(name, msgs), indent=2, ensure_ascii=False).encode("utf-8")
-        return raw, f"{slug}-grok-{stamp}.json", "application/json"
+    if fmt == "hermes":
+        raw = json.dumps(_as_agent(name, msgs), indent=2, ensure_ascii=False).encode("utf-8")
+        return raw, f"{slug}-hermes-{stamp}.json", "application/json"
     if fmt == "system":
         return export_system_zip(bot, slug, stamp)
     raise ValueError(f"unknown format {fmt}")
@@ -650,7 +650,7 @@ def export_system_zip(bot: Any, slug: str = "bot", stamp: str = "") -> tuple[byt
     files = 0
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         manifest = {
-            "source": "grok-desk",
+            "source": "hermes-desk",
             "kind": "system",
             "version": 1,
             "exported_at": iso(),
@@ -669,9 +669,9 @@ def export_system_zip(bot: Any, slug: str = "bot", stamp: str = "") -> tuple[byt
             "layout": {
                 "README.md": "How to read this archive",
                 "manifest.json": "Bot identity and original disk paths",
-                "bot/": "SOUL, agent profile, chats, robot_state, Grok home (no auth)",
+                "bot/": "SOUL, agent profile, chats, robot_state, Hermes home (no auth)",
                 "workspace/": "MiniOS desktop files, BODY.md, AGENTS.md, memory",
-                "minios/": "Grok Desk MiniOS source used to run this bot",
+                "minios/": "Hermes Desk MiniOS source used to run this bot",
             },
         }
         zf.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
@@ -704,8 +704,8 @@ def export_system_zip(bot: Any, slug: str = "bot", stamp: str = "") -> tuple[byt
             for ui_name in (
                 "index.html",
                 "app.js",
-                "grokbot-ui.js",
-                "grokbot.css",
+                "hermesbot-ui.js",
+                "hermesbot.css",
                 "styles.css",
                 "robot-simulator.html",
             ):
@@ -721,7 +721,7 @@ def export_system_zip(bot: Any, slug: str = "bot", stamp: str = "") -> tuple[byt
     return buf.getvalue(), f"{slug}-system-{stamp}.zip", "application/zip"
 
 
-_SYSTEM_README = """# Grok Desk bot system export
+_SYSTEM_README = """# Hermes Desk bot system export
 
 This zip is the bot as a MiniOS system, not just the chat.
 
@@ -730,7 +730,7 @@ This zip is the bot as a MiniOS system, not just the chat.
 - `manifest.json` — bot id, name, model, original disk paths
 - `bot/` — identity (`SOUL.md`, `agent.md`, `PROFILE.toml`), chats, `robot_state.json`, memory
 - `workspace/` — MiniOS home: `BODY.md`, `AGENTS.md`, Desktop/Documents/Pictures, `.memory`
-- `minios/` — Grok Desk source that runs the body and desktop (`deskd/`, `ui/robot-simulator.html`)
+- `minios/` — Hermes Desk source that runs the body and desktop (`deskd/`, `ui/robot-simulator.html`)
 
 Chrome profiles, API tokens (`auth.json`), vendor bundles, and caches are omitted.
 
@@ -806,13 +806,13 @@ def _as_claude(title: str, msgs: list[dict[str, Any]]) -> dict[str, Any]:
     return {"uuid": _nid(), "name": title, "chat_messages": items}
 
 
-def _as_grok(title: str, msgs: list[dict[str, Any]]) -> dict[str, Any]:
+def _as_agent(title: str, msgs: list[dict[str, Any]]) -> dict[str, Any]:
     t0 = iso()
     responses = []
     parent = None
     for i, m in enumerate(msgs):
         rid = _nid()
-        sender = "user" if m["role"] == "user" else "grok"
+        sender = "user" if m["role"] == "user" else "hermes"
         if m["role"] == "system":
             sender = "user"
         responses.append(

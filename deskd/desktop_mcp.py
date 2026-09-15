@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Semantic MiniOS Desktop Driver for Grok Desk."""
+"""Semantic MiniOS Desktop Driver for Hermes Desk."""
 from __future__ import annotations
 import base64, json, os, sys, urllib.error, urllib.parse, urllib.request
-BOT=""; BASE=os.environ.get("GROK_DESK_URL","http://127.0.0.1:8742"); TOKEN=os.environ.get("GROK_DESK_TOKEN","")
+BOT=""; BASE=os.environ.get("HERMES_DESK_URL","http://127.0.0.1:8742"); TOKEN=os.environ.get("HERMES_DESK_TOKEN","")
 
 def _http(method,path,body=None,timeout=45):
     data=None if body is None else json.dumps(body).encode(); req=urllib.request.Request(BASE+path,data=data,method=method,headers={"Authorization":f"Bearer {TOKEN}","Content-Type":"application/json"})
@@ -31,12 +31,12 @@ TOOLS=[
  tool("desktop_observe","Semantic MiniOS state plus a JPEG of THIS bot's MiniOS desktop for visual verification."),
  tool("desktop_watch","Wait for a visual change after an action, then return semantic MiniOS state plus the newest JPEG.",{"after_seq":{"type":"integer","minimum":0},"timeout":{"type":"number","minimum":0,"maximum":30}}),
  tool("desktop_screenshot","Capture THIS bot's MiniOS workspace desktop (wallpaper, dock, Desktop icons, MiniOS windows) from the headless MiniOS observer. Saves Pictures/screenshot-*.jpg and posts it in chat. Never the host/user monitor. Never scrot/grim/gnome-screenshot.",{"caption":{"type":"string"}}),
- tool("desktop_open_app","Open/focus a known app by ID/name: app_grok, app_browser, app_files, app_notepad, app_terminal, app_editor, app_preview, app_dev, app_settings.",{"app_id":{"type":"string"}},["app_id"]),
+ tool("desktop_open_app","Open/focus a known app by ID/name: app_agent, app_browser, app_files, app_notepad, app_terminal, app_editor, app_preview, app_dev, app_settings.",{"app_id":{"type":"string"}},["app_id"]),
  tool("desktop_focus_window","Focus a known window such as win_browser.",{"window_id":{"type":"string"}},["window_id"]),
  tool("desktop_minimize_window","Minimize a known window by ID.",{"window_id":{"type":"string"}},["window_id"]),
  tool("desktop_maximize_window","Toggle maximize for a known window by ID.",{"window_id":{"type":"string"}},["window_id"]),
  tool("desktop_close_window","Close a known window by ID.",{"window_id":{"type":"string"}},["window_id"]),
- tool("desktop_click_object","Click a known object from desktop_state, e.g. app_browser, obj_grok_close, or #6. Cursor visibly moves to it.",{"object_id":{"type":"string"}},["object_id"]),
+ tool("desktop_click_object","Click a known object from desktop_state, e.g. app_browser, obj_agent_close, or #6. Cursor visibly moves to it.",{"object_id":{"type":"string"}},["object_id"]),
  tool("desktop_open_file","Open a workspace file. Documents (.txt/.md) open in Text Editor; other text/code opens in Code Editor.",{"path":{"type":"string"}},["path"]),
  tool("desktop_open_preview","Open a workspace HTML file in sandboxed Preview.",{"path":{"type":"string"}},["path"]),
  tool("desktop_browser_navigate","Navigate the live Browser to a URL and show it.",{"url":{"type":"string"}},["url"]),
@@ -72,7 +72,7 @@ def action(a,**kw): return _http("POST",f"/v1/bots/{BOT}/desktop/action",{"actio
 
 def tools_for_kind(kind):
     k=str(kind or "").strip().lower().replace("_","-")
-    if k in ("grok-build","grok","agent","agentic","build","coding"):
+    if k in ("hermes","hermes","agent","agentic","build","coding"):
         return [t for t in TOOLS if str(t.get("name") or "").startswith("desktop_")]
     if k in ("teela-brain","teela","brain","body","robot","embodiment"):
         skip=("desktop_run_tests","desktop_run_app","desktop_stop_app")

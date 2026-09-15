@@ -51,7 +51,7 @@ class MotionRouterTests(unittest.TestCase):
         self.assertIn("MiniOS twin only", out.get("reason") or "")
 
     def test_walk_stays_sim_until_wbc(self) -> None:
-        with patch.dict("os.environ", {"GROK_DESK_WBC": ""}, clear=False):
+        with patch.dict("os.environ", {"HERMES_DESK_WBC": ""}, clear=False):
             out = motion.dispatch(None, {"cmd": "walk"})
         self.assertEqual(out["mode"], "dynamic")
         self.assertFalse(out["hardware"])
@@ -1124,7 +1124,7 @@ class MotionRouterTests(unittest.TestCase):
         self.assertIn("skip llama prefill", src)
 
     def test_prefill_budget_trims_grok_acp_dump(self) -> None:
-        huge = "You are a Grok coding agent.\n" + ("tool dump line\n" * 4000)
+        huge = "You are a Hermes coding agent.\n" + ("tool dump line\n" * 4000)
         huge += "You have a body. Call bot_desktop__robot_pose to wave.\n"
         payload = {
             "model": "qwen38",
