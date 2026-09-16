@@ -1199,12 +1199,55 @@ def reset_local_llm_probe() -> None:
         _LLM_PROBE_CACHE = (0.0, {})
 
 
+def _local_llm_key(url: str) -> str:
+    """API key for a local engine URL, from the model catalog.
+
+    llama-server is started with --api-key and rejects unauthenticated calls
+    (401) — both /v1/models and /v1/chat/completions. The ACP path gets the
+    key from the catalog automatically; these direct desk calls must too, or
+    the Teela executive sees a dead engine and says its brain stalled.
+    """
+    base = str(url or "").rstrip("/")
+    if not base:
+        return ""
+    try:
+        _, catalog = load_user_models()
+    except Exception:
+        return ""
+    for tbl in catalog.values():
+        if not isinstance(tbl, dict):
+            continue
+        tbl_url = str(tbl.get("base_url") or "").strip().rstrip("/")
+        if not tbl_url:
+            continue
+        # Match on the same host:port, path-insensitive (/v1 suffixes differ).
+        a = urlsplit(base if "://" in base else f"http://{base}")
+        b = urlsplit(tbl_url if "://" in tbl_url else f"http://{tbl_url}")
+        if (a.hostname, a.port) == (b.hostname, b.port):
+            key = str(tbl.get("api_key") or "").strip()
+            if key and key.lower() != "none":
+                return key
+    return ""
+
+
+def _llm_headers(url: str, base: dict[str, str] | None = None) -> dict[str, str]:
+    """Headers for a direct local-engine call: Bearer key when the catalog has one."""
+    headers = dict(base or {})
+    key = _local_llm_key(url)
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
+
+
 def _probe_one_llm(url: str, timeout: float) -> tuple[str, ...]:
     """List model ids at url/v1/models via urllib (Connection: close)."""
     try:
         base = (url or "").rstrip("/")
         req = urllib.request.Request(base + "/v1/models", method="GET")
         req.add_header("Connection", "close")
+        key = _local_llm_key(base)
+        if key:
+            req.add_header("Authorization", f"Bearer {key}")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if int(getattr(resp, "status", 200) or 200) != 200:
                 return ()
@@ -4469,7 +4512,9 @@ def fast_local_chat(
     else:
         return None
     raw = json.dumps(payload).encode()
-    req = urllib.request.Request(url, data=raw, method="POST", headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        url, data=raw, method="POST", headers=_llm_headers(url, {"Content-Type": "application/json"})
+    )
     content = ""
     usage: dict[str, Any] = {}
     started_ms = time.time() * 1000.0
@@ -7135,7 +7180,12 @@ def _teela_minios_complete(payload: dict[str, Any]) -> dict[str, Any] | None:
     payload = dict(payload)
     payload["model"] = think_id
     raw = json.dumps(payload).encode()
-    req = urllib.request.Request(url, data=raw, method="POST", headers={"Content-Type": "application/json", "Connection": "close"})
+    req = urllib.request.Request(
+        url,
+        data=raw,
+        method="POST",
+        headers=_llm_headers(url, {"Content-Type": "application/json", "Connection": "close"}),
+    )
     try:
         with hybrid_exclusive("think"):
             with urllib.request.urlopen(req, timeout=120) as resp:
@@ -7665,7 +7715,7 @@ def local_llm_write_document(bot: Any, intent: str, topic: str, page: str = "") 
             url,
             data=json.dumps(payload).encode(),
             method="POST",
-            headers={"Content-Type": "application/json"},
+            headers=_llm_headers(url, {"Content-Type": "application/json"}),
         )
         with hybrid_exclusive(lane):
             with urllib.request.urlopen(req, timeout=90) as resp:
@@ -10100,7 +10150,7 @@ def interpret_motor_nl(
             url,
             data=raw,
             method="POST",
-            headers={"Content-Type": "application/json"},
+            headers=_llm_headers(url, {"Content-Type": "application/json"}),
         )
         with hybrid_exclusive("think" if think else "fast"):
             with urllib.request.urlopen(req, timeout=20 if think else 12) as resp:
