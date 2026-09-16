@@ -12861,10 +12861,25 @@ class AcpClient:
                     last_err = e
         return {"ok": False, "error": str(last_err) if last_err else "rewind unavailable", "target": target}
 
+    _AGENT_ERR_RE = re.compile(
+        r"\b(Traceback|Exception|Error|CRITICAL|FATAL)\b"
+        r"|No LLM provider|^\s*(ERROR|CRITICAL|FATAL)\s*\]"
+        r"|connection (refused|reset)|timed?\s?out|out of memory",
+        re.IGNORECASE,
+    )
+
     def _read_stderr(self, gen: int) -> None:
+        """Tail the agent child's stderr.
+
+        Log noise (Hermes' ``[INFO]`` client/turn lines) is kept out of the
+        chat and the status banner; it is only written to a per-bot file for
+        debugging. Genuine errors are surfaced *in the conversation* as a
+        system message (persisted) instead of the top banner.
+        """
         proc = self.proc
         if not proc or not proc.stderr:
             return
+        log_path = self.bot.agent_home / "acp.stderr.log"
         for line in proc.stderr:
             if gen != self._generation:
                 return
@@ -12873,14 +12888,25 @@ class AcpClient:
                 continue
             if line.startswith("{") and '"msg"' in line:
                 continue
-            emit(
-                {
-                    "type": "status",
-                    "bot_id": self.bot.id,
-                    "text": line[-200:],
-                    "surface": "log",
-                }
-            )
+            try:
+                if log_path.is_file() and log_path.stat().st_size > 1_000_000:
+                    log_path.unlink()
+                with log_path.open("a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+            except OSError:
+                pass
+            if not self._AGENT_ERR_RE.search(line):
+                continue
+            short = re.sub(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\s*", "", line).strip()
+            short = re.sub(r"^\[(INFO|DEBUG|WARNING)\]\s*", "", short)
+            short = re.sub(r"thread=Thread-\d+\s*<[^>]*>:\d+\s*", "", short)
+            if len(short) > 300:
+                short = short[:300] + "…"
+            try:
+                self.bot.append_msg("system", f"⚠ {short}")
+            except Exception:
+                pass
+            emit({"type": "chat", "bot_id": self.bot.id, "role": "system", "text": f"⚠ {short}"})
 
     def _read_stdout(self, gen: int) -> None:
         proc = self.proc
