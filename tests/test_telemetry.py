@@ -523,6 +523,56 @@ class MeterRetentionTests(unittest.TestCase):
         self.assertAlmostEqual(self.bot.tps, 33.3)
 
 
+class NoteRealAcpUsageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        import deskd as d
+        self.bot = d.Bot("b_real", "Real", "", "", "qwen3-8-27b", "🤖")
+
+    def _stream_span(self, seconds: float) -> None:
+        self.bot._first_out_wall = 1000.0
+        self.bot._last_chunk_wall = 1000.0 + seconds
+
+    def test_first_response_sets_baseline_only(self) -> None:
+        self._stream_span(2.0)
+        self.bot.note_real_acp_usage({"usage": {"outputTokens": 100}})
+        self.assertEqual(self.bot._acp_prev_completion, 100)
+        self.assertEqual(self.bot.tps, 0.0)
+        self.assertEqual(self.bot.speed_source, "")
+
+    def test_second_response_real_delta_over_stream_span(self) -> None:
+        self.bot.note_real_acp_usage({"usage": {"outputTokens": 100}})
+        self._stream_span(2.0)  # 240 real completion tokens over 2s = 120 tok/s
+        self.bot.note_real_acp_usage({"usage": {"outputTokens": 340}})
+        self.assertAlmostEqual(self.bot.tps, 120.0)
+        self.assertEqual(self.bot.speed_source, "stream_measurement")
+        self.assertEqual(self.bot.token_source, "engine")
+        self.assertEqual(self.bot.telemetry["output_tokens"], 240)
+        self.assertAlmostEqual(self.bot.telemetry["generation_duration_ms"], 2000.0)
+
+    def test_zero_delta_keeps_last_speed(self) -> None:
+        self.bot.tps = 55.5
+        self.bot.speed_source = "stream_measurement"
+        self.bot.note_real_acp_usage({"usage": {"outputTokens": 300}})
+        self._stream_span(1.0)
+        self.bot.note_real_acp_usage({"usage": {"outputTokens": 300}})  # tool-only turn
+        self.assertEqual(self.bot.tps, 55.5)
+
+    def test_no_stream_span_keeps_last_speed(self) -> None:
+        self.bot.tps = 77.0
+        self.bot.speed_source = "stream_measurement"
+        self.bot.note_real_acp_usage({"usage": {"outputTokens": 120}})
+        self.bot._first_out_wall = None  # canned reply: nothing streamed
+        self.bot._last_chunk_wall = None
+        self.bot.note_real_acp_usage({"usage": {"outputTokens": 200}})
+        self.assertEqual(self.bot.tps, 77.0)
+
+    def test_missing_usage_is_ignored(self) -> None:
+        self.bot.note_real_acp_usage({"stopReason": "end_turn"})
+        self.bot.note_real_acp_usage(None)
+        self.assertEqual(self.bot._acp_prev_completion, None)
+        self.assertEqual(self.bot.tps, 0.0)
+
+
 class FrontendFormulaTests(unittest.TestCase):
     def test_ui_no_longer_uses_char_div_37(self) -> None:
         app = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")

@@ -12632,6 +12632,11 @@ class AcpClient:
         else:
             self.bot.reset_telemetry()
             self.bot._seed_usage_from_disk()
+        # The engine's per-session completion counter restarts at this (re)start,
+        # so the real-tps baseline must too — the first turn re-records it.
+        self.bot._acp_prev_completion = None
+        self.bot._first_out_wall = None
+        self.bot._last_chunk_wall = None
         self.bot.apply_models(result.get("models") or {})
         self._bot_set_acp_mode()
         self.bot._write_agents()
@@ -12835,9 +12840,13 @@ class AcpClient:
                 blocks.append({"type": "text", "text": f"[image attached at {img.get('path')}]"})
         if not blocks:
             raise RuntimeError("empty prompt")
+        # Per-turn real-decode anchors: reset on turn start. The ACP stream is
+        # per-token, so first visible output -> last is a real decode span.
+        self.bot._first_out_wall = None
+        self.bot._last_chunk_wall = None
         prompt_timeout = ACP_PROMPT_MAX_SEC
         try:
-            return self.request(
+            result = self.request(
                 "session/prompt",
                 {"sessionId": self.session_id, "prompt": blocks},
                 timeout=prompt_timeout,
@@ -12846,7 +12855,7 @@ class AcpClient:
             # Local Qwen ACP advertises image:false — fall back to paths in text.
             if not images:
                 raise
-            return self.request(
+            result = self.request(
                 "session/prompt",
                 {
                     "sessionId": self.session_id,
@@ -12854,6 +12863,8 @@ class AcpClient:
                 },
                 timeout=prompt_timeout,
             )
+        self.bot.note_real_acp_usage(result if isinstance(result, dict) else None)
+        return result
 
     def cancel(self) -> None:
         self._turn_cancel.set()
@@ -13337,6 +13348,14 @@ class Bot:
         self.speed_source = ""
         self.token_source = ""
         self._gen: dict[str, Any] = {}
+        self._first_out_wall: float | None = None
+        self._last_chunk_wall: float | None = None
+        # Real-usage latches (see note_real_acp_usage). The ACP session/prompt
+        # response carries the engine's real per-session cumulative
+        # completionTokens; the per-turn delta is the true output, and the
+        # per-token ACP stream gives the real decode span.
+        self._acp_prev_completion: int | None = None
+        self._real_decode_span: float | None = None
         self.telemetry: dict[str, Any] = {}
         self.workspace_id = workspace_id(bid)
         self.control = "agent_controlled"
@@ -15351,6 +15370,12 @@ class Bot:
         ts = tel._as_float(meta.get("agentTimestampMs"))
         if ts is None:
             ts = time.time() * 1000.0
+        # Wall-clock first/last output anchors for the real per-token decode span.
+        # The Hermes ACP stream is per-token (chunks ~ms apart), so this span is a
+        # genuine decode duration, not a per-model-call batch.
+        if getattr(self, "_first_out_wall", None) is None:
+            self._first_out_wall = time.monotonic()
+        self._last_chunk_wall = time.monotonic()
         gen = self._gen
         if stream_start is not None and gen.get("stream_start_ms") not in (None, stream_start):
             self._finalize_generation()
@@ -15563,6 +15588,60 @@ class Bot:
         self.speed_source = "local_stream"
         self.token_source = "tokenizer"
         self._emit_usage(log=log)
+
+    def note_real_acp_usage(self, result: dict[str, Any] | None) -> None:
+        """Turn the ACP session/prompt response's real engine usage into real tps.
+
+        The response ``usage`` carries the engine's true counts (camelCase wire:
+        ``inputTokens``/``outputTokens``/``totalTokens``). ``outputTokens`` is a
+        per-session cumulative counter, so this turn's real completion count is the
+        delta from the previous response. The ACP stream is per-token, so the
+        first→last output wall span recorded while streaming is a real decode
+        duration — their ratio is the real tokens/second, for local engines too
+        (the in-stream estimate path is suppressed for them, so this is the only
+        measured number). Runs after ``AcpClient.prompt`` returns, i.e. after the
+        whole turn has streamed.
+        """
+        if not isinstance(result, dict):
+            return
+        usage = result.get("usage")
+        if not isinstance(usage, dict):
+            return
+        cumulative_out = tel._as_int(usage.get("outputTokens"))
+        if cumulative_out is None:
+            cumulative_out = tel._as_int(usage.get("completion_tokens"))
+        if cumulative_out is None:
+            return
+        prev = self._acp_prev_completion
+        if prev is None:
+            # First response on this desk process / ACP session: the cumulative
+            # counter's absolute value is unknown (fresh or resumed session), so
+            # only record the baseline; the next turn has a real delta.
+            self._acp_prev_completion = cumulative_out
+            return
+        delta = cumulative_out - prev
+        self._acp_prev_completion = cumulative_out
+        if delta <= 0:
+            return
+        first = getattr(self, "_first_out_wall", None)
+        last = getattr(self, "_last_chunk_wall", None)
+        span = (last - first) if (first is not None and last is not None) else None
+        if span is None or span < 0.3:
+            # No real per-token stream recorded for this turn (canned reply, tool
+            # only, or sub-span noise) — the meter keeps its last good value.
+            return
+        tps = float(delta) / span
+        if not tps or tps != tps or tps <= 0.0 or tps > 2000.0:
+            return
+        self.tps = tps
+        self.speed_source = "stream_measurement"
+        self.token_source = "engine"
+        telemetry = self.telemetry
+        if isinstance(telemetry, dict):
+            telemetry["output_tokens"] = int(delta)
+            telemetry["generation_duration_ms"] = span * 1000.0
+            telemetry["generation_tok_s"] = tps
+        self._emit_usage(log=True)
 
     def record_local_generation(
         self,
