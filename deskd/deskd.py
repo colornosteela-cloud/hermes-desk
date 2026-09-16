@@ -2128,12 +2128,17 @@ def flatten_model_tables(models: dict[str, Any] | None) -> dict[str, Any]:
     return out
 
 
+def _legacy_grok_toml_path() -> Path:
+    """Legacy Grok Desk config (test-isolatable via HERMES_DESK_LEGACY_TOML)."""
+    return Path(os.environ.get("HERMES_DESK_LEGACY_TOML") or (Path.home() / ".grok" / "config.toml"))
+
+
 def _migrate_legacy_grok_catalog() -> None:
     """One-time: carry the Grok Desk model picker into models.json on first run."""
     cat_path = agent_home_mod.models_catalog_path()
     if cat_path.is_file():
         return
-    legacy = Path.home() / ".grok" / "config.toml"
+    legacy = _legacy_grok_toml_path()
     if not legacy.is_file():
         return
     try:
@@ -2158,6 +2163,57 @@ def _migrate_legacy_grok_catalog() -> None:
         pass
 
 
+def _legacy_toml_models() -> dict[str, Any]:
+    """Model tables from the legacy ~/.grok/config.toml, or {} when absent."""
+    legacy = _legacy_grok_toml_path()
+    if not legacy.is_file():
+        return {}
+    try:
+        with legacy.open("rb") as f:
+            data = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    for key, val in data.items():
+        if key == "model" and isinstance(val, dict):
+            return flatten_model_tables(val)
+    return {}
+
+
+def _heal_catalog(default: str, catalog: dict[str, Any]) -> None:
+    """Re-import usable rows when the shared catalog lost them.
+
+    Symptom this guards against: the catalog shrinks to a single keyless cloud
+    row (no xAI key on host), which then becomes the default and every new bot
+    fails with "No LLM provider configured". Re-add local/custom rows that the
+    legacy TOML still defines but models.json dropped; prefer a usable default.
+    """
+    if not isinstance(catalog, dict):
+        catalog = {}
+    legacy = _legacy_toml_models()
+    merged = dict(catalog)
+    added = False
+    for mid, tbl in legacy.items():
+        if not isinstance(tbl, dict):
+            continue
+        if mid in merged:
+            continue
+        if not model_has_provider(mid, tbl):
+            continue
+        merged[mid] = dict(tbl)
+        added = True
+    if not added:
+        return
+    want = default if (default in merged and model_has_provider(default, merged.get(default))) else ""
+    if not want:
+        usable = [mid for mid in merged if model_has_provider(mid, merged.get(mid))]
+        want = usable[0] if usable else next(iter(merged))
+    try:
+        agent_home_mod.save_bot_catalog(want, merged)
+        print(f"[deskd] healed model catalog: re-added {sorted(set(legacy) - set(catalog))}", flush=True)
+    except Exception:
+        pass
+
+
 def load_user_models() -> tuple[str, dict[str, Any]]:
     """The desk model picker (shared models.json), with host fallbacks.
 
@@ -2174,11 +2230,47 @@ def load_user_models() -> tuple[str, dict[str, Any]]:
         host_default = _host_hermes_default_model()
         if host_default:
             return host_default, {}
+    # Self-heal: if the catalog lost EVERY usable row (e.g. clobbered down to a
+    # single keyless cloud row), re-import local rows from the legacy TOML so
+    # the picker can still serve a model. A catalog that still has at least one
+    # usable row is left alone — only its default is corrected below.
+    if not any(model_has_provider(mid, catalog.get(mid)) for mid in catalog):
+        _heal_catalog(default, catalog)
+        default, catalog = agent_home_mod.load_bot_catalog()
     if not default and catalog:
         default = next(iter(catalog))
     elif default and catalog and default not in catalog:
         default = next(iter(catalog))
+    # The default must be a model this host can actually serve. A keyless
+    # cloud row (no xAI key) as default makes every new bot fail with
+    # "No LLM provider configured" — fall back to the first usable row.
+    if catalog and not model_has_provider(default, catalog.get(default)):
+        usable = [mid for mid in catalog if model_has_provider(mid, catalog.get(mid))]
+        if usable:
+            default = usable[0]
     return default, catalog
+
+
+def model_has_provider(mid: str, tbl: dict[str, Any] | None = None) -> bool:
+    """True when a Hermes child could actually serve this model on this host.
+
+    Cloud models (xAI ``responses``/``xai`` backends, ``grok-*`` ids) need an
+    xAI key; custom endpoints need a reachable base_url or an api_key. Without
+    this check a keyless cloud row can become the picker default and every new
+    bot dies with "No LLM provider configured".
+    """
+    tbl = tbl or {}
+    backend = str(tbl.get("api_backend") or "").lower()
+    api_key = str(tbl.get("api_key") or "").strip()
+    base_url = str(tbl.get("base_url") or "").strip()
+    if is_local_gpu_model(mid, tbl):
+        # Startable/served locally; GPU gating is done separately.
+        return True
+    if backend in {"responses", "xai"} or str(mid or "").lower().startswith("grok"):
+        return bool(_xai_api_key())
+    if base_url:
+        return bool(api_key) or local_llm_port_open(base_url)
+    return bool(api_key)
 
 
 def _host_hermes_default_model() -> str:
@@ -16314,6 +16406,17 @@ def create_bot(body: dict[str, Any]) -> Bot:
     model = (body.get("model") or load_user_models()[0]).strip()
     if not model:
         raise ValueError("model is required")
+    _default, _cat = load_user_models()
+    _cat_tbl = _cat.get(model) if isinstance(_cat.get(model), dict) else {}
+    # Reject a model this host cannot actually serve before spawning the agent.
+    # A keyless cloud row (no xAI key) would otherwise make ACP's session/new
+    # fail with an opaque "Internal error / No LLM provider configured".
+    if not model_has_provider(model, _cat_tbl):
+        raise ValueError(
+            f"Model {model} has no usable provider on this host "
+            "(cloud model with no API key, or local endpoint not reachable). "
+            "Pick a model with a provider in Settings → Models, or add the API key."
+        )
     ensure_model_on_host(model, bot=types.SimpleNamespace(kind=kind))
     emoji = (body.get("emoji") or "◉").strip()[:4]
     bid = bot_id()
@@ -16322,9 +16425,6 @@ def create_bot(body: dict[str, Any]) -> Bot:
     bot.avatar_color = color
     bot.avatar_shape = shape
     bot.provision()
-    with lock:
-        bots[bid] = bot
-    emit({"type": "bot.created", "bot": bot.profile()})
     if not Path(HERMES_BIN).is_file():
         raise FileNotFoundError(
             f"Hermes Agent CLI not found at {HERMES_BIN}. "
@@ -16333,8 +16433,24 @@ def create_bot(body: dict[str, Any]) -> Bot:
         )
     try:
         bot.acp.start()
-    except FileNotFoundError as e:
-        raise FileNotFoundError(str(e)) from e
+    except BaseException as e:
+        # Roll back before registering: a bot whose ACP session could not be
+        # created (e.g. model has no provider) must not be persisted, or it
+        # becomes a zombie that re-fails on every daemon restart.
+        with lock:
+            bots.pop(bid, None)
+        try:
+            bot.destroy()
+        except Exception:
+            pass
+        if isinstance(e, FileNotFoundError):
+            raise
+        raise ValueError(
+            f"Could not start the agent for {name!r} (model {model!r}): {e}. "
+            "Pick a model with a provider in Settings → Models and try again."
+        ) from e
+    with lock:
+        bots[bid] = bot
     emit({"type": "bot.created", "bot": bot.profile()})
     if cluster is not None:
         threading.Thread(target=cluster.announce_to_peers, daemon=True).start()
@@ -18376,6 +18492,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(404, {"error": "not found"})
                 mid = (body.get("model") or body.get("modelId") or "").strip() or bot.model
                 effort = str(body.get("effort") or body.get("reasoning_effort") or "").strip()
+                _mdl_tbl = (load_user_models()[1] or {}).get(mid)
+                if not model_has_provider(mid, _mdl_tbl if isinstance(_mdl_tbl, dict) else {}):
+                    return self._json(
+                        400,
+                        {
+                            "error": (
+                                f"Model {mid} has no usable provider on this host "
+                                "(cloud model with no API key, or local endpoint not reachable). "
+                                "Pick a model with a provider in Settings → Models, or add the API key."
+                            )
+                        },
+                    )
                 return self._json(200, bot.set_model(mid, effort=effort or None))
             if path.startswith("/v1/bots/") and path.endswith("/workspace-shares"):
                 bid = path.split("/")[3]

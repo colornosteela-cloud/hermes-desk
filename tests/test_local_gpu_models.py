@@ -357,9 +357,21 @@ class LocalGpuModelTests(unittest.TestCase):
         weights = home / "models"
         (weights / "NewNet").mkdir(parents=True)
         (weights / "NewNet" / "config.json").write_text("{}", encoding="utf-8")
-        orig_home, orig_models = d.USER_AGENT_HOME, d.MODELS_DIR
+        orig_home, orig_models, orig_desk, orig_legacy = (
+            d.USER_AGENT_HOME,
+            d.MODELS_DIR,
+            os.environ.get("HERMES_DESK_HOME"),
+            os.environ.get("HERMES_DESK_LEGACY_TOML"),
+        )
         d.USER_AGENT_HOME = home
         d.MODELS_DIR = weights
+        # The shared catalog path (agent_home.models_catalog_path) is derived
+        # from HERMES_DESK_HOME — without this the test writes the real
+        # ~/.hermes/models.json and can clobber the live model picker. The
+        # legacy TOML is isolated too so the catalog self-heal cannot
+        # re-import the host's real model rows mid-test.
+        os.environ["HERMES_DESK_HOME"] = str(home)
+        os.environ["HERMES_DESK_LEGACY_TOML"] = str(home / "no-such-legacy.toml")
         try:
             with patch.object(d, "bots", {}):
                 with patch.object(d, "emit"):
@@ -396,6 +408,14 @@ class LocalGpuModelTests(unittest.TestCase):
         finally:
             d.USER_AGENT_HOME = orig_home
             d.MODELS_DIR = orig_models
+            if orig_desk is None:
+                os.environ.pop("HERMES_DESK_HOME", None)
+            else:
+                os.environ["HERMES_DESK_HOME"] = orig_desk
+            if orig_legacy is None:
+                os.environ.pop("HERMES_DESK_LEGACY_TOML", None)
+            else:
+                os.environ["HERMES_DESK_LEGACY_TOML"] = orig_legacy
             tmp.cleanup()
 
     def test_qwen_start_cools_gpus_after_crash(self) -> None:
