@@ -18435,6 +18435,7 @@ class Handler(BaseHTTPRequestHandler):
             self.connection.settimeout(20.0)
             self.wfile.write(b":ok\n\n")
             self.wfile.flush()
+            idle_beats = 0
             while True:
                 wake.wait(timeout=15)
                 wake.clear()
@@ -18445,7 +18446,21 @@ class Handler(BaseHTTPRequestHandler):
                 if not batch:
                     self.wfile.write(b":keepalive\n\n")
                     self.wfile.flush()
+                    # Real data ping every ~30s (every other beat). Comment
+                    # keepalives never fire the client's onmessage, so a
+                    # silently dead stream (Wi-Fi roam, NAT drop) is invisible
+                    # to the browser's EventSource auto-reconnect. A data ping
+                    # gives the client's watchdog a heartbeat to miss.
+                    idle_beats += 1
+                    if idle_beats % 2 == 0:
+                        self.wfile.write(
+                            b'data: {"v":1,"type":"ping","ts":'
+                            + str(int(time.time())).encode()
+                            + b"}\n\n"
+                        )
+                        self.wfile.flush()
                     continue
+                idle_beats = 0
                 for ev in batch:
                     if cluster_feed and ev.get("proxied"):
                         continue

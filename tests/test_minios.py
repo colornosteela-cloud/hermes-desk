@@ -1440,6 +1440,9 @@ Object.assign(globalThis, {
   stopSpeak() {}, PAGE_ID: 'test-page', chatStickBottom: false,
   skipCheckConfirm: false, checkScopeToSend: '',
   maybeConfirmSystemCheck: async () => false,
+  // The SSE watchdog uses a persistent setInterval; the harness has no way to
+  // clear it, and a live interval would keep node alive past the assertions.
+  setInterval: () => 0, clearInterval: () => {},
 });
 const event = (key) => ({key, defaultPrevented: false,
   preventDefault() { this.defaultPrevented = true; }});

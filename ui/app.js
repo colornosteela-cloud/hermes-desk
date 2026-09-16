@@ -7312,6 +7312,10 @@ function loopBrowser() {
 
 let eventSource = null;
 let eventReconnectTimer = 0;
+let eventLastSeen = 0;      // Date.now() of the last SSE message (incl. pings)
+let eventWatchdog = 0;      // interval id for the dead-stream watchdog
+const EVENT_WATCHDOG_MS = 45000;   // pings arrive every ~30s when idle
+const EVENT_RECONNECT_AFTER_MS = 20000; // force-retry a dead stream sooner
 function connectEvents() {
   if (eventReconnectTimer) {
     clearTimeout(eventReconnectTimer);
@@ -7325,13 +7329,20 @@ function connectEvents() {
     }
     eventSource = null;
   }
+  eventLastSeen = Date.now();
   const es = new EventSource(`/v1/events`);
   eventSource = es;
   es.onmessage = (ev) => {
+    eventLastSeen = Date.now();
     let msg;
     try {
       msg = JSON.parse(ev.data);
     } catch {
+      return;
+    }
+    if (msg.type === "ping") {
+      // Server heartbeat (idle stream). Nothing to render; the watchdog
+      // already used it as proof the stream is alive.
       return;
     }
     if (msg.type === "voice" && typeof msg.voice === "boolean" && msg.voice !== state.voice) {
@@ -7641,8 +7652,35 @@ function connectEvents() {
     es.close();
     eventSource = null;
     if (eventReconnectTimer) return;
+    // Genuine error (network down, server restart): reconnect fast.
     eventReconnectTimer = setTimeout(connectEvents, 2000);
   };
+  startEventWatchdog();
+}
+
+// A silently dead SSE stream (Wi-Fi roam, NAT timeout, phone sleep) never
+// fires onerror, so EventSource's own auto-reconnect never kicks in and the
+// page stops receiving chat replies. The server pings every ~30s when idle,
+// so if nothing (ping or real event) has arrived for EVENT_WATCHDOG_MS while
+// the socket still looks open, force a reconnect.
+function startEventWatchdog() {
+  if (eventWatchdog) return;
+  eventWatchdog = setInterval(() => {
+    if (!eventSource) return;
+    const ready = eventSource.readyState; // 0 CONNECTING, 1 OPEN, 2 CLOSED
+    if (ready === 2) return; // onerror path handles closed streams
+    if (Date.now() - eventLastSeen > EVENT_WATCHDOG_MS) {
+      try {
+        eventSource.close();
+      } catch {
+        /* already closing */
+      }
+      eventSource = null;
+      if (!eventReconnectTimer) {
+        eventReconnectTimer = setTimeout(connectEvents, EVENT_RECONNECT_AFTER_MS);
+      }
+    }
+  }, 10000);
 }
 
 (async function init() {
