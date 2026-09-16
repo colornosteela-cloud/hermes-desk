@@ -1436,6 +1436,7 @@ Object.assign(globalThis, {
   autosizeComposer() {}, renderPasteTray() {}, clearHorizon() {},
   renderConversation() {}, renderModelMenu() {}, requestAnimationFrame() {},
   syncMobileComposerPad() {}, slashMenuKey: () => false,
+  syncChatStatusLine() {},
   stopSpeak() {}, PAGE_ID: 'test-page', chatStickBottom: false,
   skipCheckConfirm: false, checkScopeToSend: '',
   maybeConfirmSystemCheck: async () => false,

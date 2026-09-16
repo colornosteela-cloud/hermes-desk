@@ -825,7 +825,10 @@ function setWorking(id, on) {
   if (!id) return;
   if (on) state.working[id] = true;
   else delete state.working[id];
-  if (id === state.selected) updateSendButton();
+  if (id === state.selected) {
+    updateSendButton();
+    syncChatStatusLine(state.bots.find((x) => x.id === id));
+  }
   if (voiceChat.on) paintMic();
   if (!on && id === state.selected) flushVoiceSend();
 }
@@ -1110,6 +1113,51 @@ function renderProgressLine(m) {
   el.setAttribute("aria-live", "polite");
   el.textContent = String(m.text || "");
   return el;
+}
+
+// Live in-chat status line: mirrors the header status (Working…, Thinking…,
+// Waiting for you…) at the bottom of the conversation with an elapsed timer,
+// so long local-brain turns are visible where the user is looking.
+let _statusLineTimer = 0;
+let _statusLineSince = 0;
+
+function syncChatStatusLine(b) {
+  const t = $("transcript");
+  if (!t) return;
+  const el = t.querySelector(":scope > .chat-status-line");
+  const status = String(b?.status || "").trim();
+  const busy = !!b && !!status && !/^ready$/i.test(status) &&
+    (isWorking(b.id) || /waiting for you|error:/i.test(status));
+  if (!busy) {
+    if (el) el.remove();
+    if (_statusLineTimer) {
+      clearInterval(_statusLineTimer);
+      _statusLineTimer = 0;
+    }
+    return;
+  }
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "chat-status-line";
+    el.setAttribute("aria-live", "polite");
+    t.appendChild(el);
+    _statusLineSince = Date.now();
+    if (!_statusLineTimer) {
+      _statusLineTimer = setInterval(() => {
+        const node = document.querySelector("#transcript .chat-status-line");
+        if (!node) return;
+        const b = state.bots.find((x) => x.id === state.selected);
+        if (!b || !b.status) return; // line is owned by the selected bot only
+        const base = node.dataset.base || b.status;
+        const secs = Math.max(1, Math.round((Date.now() - _statusLineSince) / 1000));
+        node.textContent = base ? `${base}  ·  ${secs}s` : `${secs}s`;
+        if (transcriptPinned()) stickTranscript();
+      }, 1000);
+    }
+  }
+  el.dataset.base = status;
+  el.textContent = status;
+  if (transcriptPinned()) stickTranscript();
 }
 
 function lastProgressIndex(b) {
@@ -1924,6 +1972,7 @@ function renderConversation(b) {
     t.scrollTop = Math.max(0, t.scrollHeight - fromBottom);
     updateJumpLatest();
   }
+  syncChatStatusLine(b);
   renderMeta(b);
   updateActiveChatMeta(b);
 }
@@ -7302,6 +7351,7 @@ function connectEvents() {
         }
         renderRoster();
         if (state.selected === b.id) {
+          syncChatStatusLine(b);
           $("conv-status").textContent = conversationSubtitle(b);
           if (b.control === "user_controlled") {
             $("control-banner").hidden = false;

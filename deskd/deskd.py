@@ -123,6 +123,30 @@ LOCAL_LLM_MAX_MODEL_LEN = int(_llm_env("HERMES_DESK_MAX_LEN", "HERMES_DESK_VLLM_
 # 262k window is for hard think, not MiniOS body turns.
 LOCAL_LLM_PREFILL_BUDGET = int(_llm_env("HERMES_DESK_PREFILL", "HERMES_DESK_VLLM_PREFILL", "1536"))
 LOCAL_LLM_MOTOR_PREFILL = int(_llm_env("HERMES_DESK_MOTOR_PREFILL", "HERMES_DESK_VLLM_MOTOR_PREFILL", "2048"))
+# llama.cpp hybrid prefill is ~65 tok/s (see LOCAL_LLM_PREFILL_BUDGET comment).
+# The executive prompt is ~10k tokens → ~2.5 min of prefill before the first
+# generated token. A fixed 120s timeout killed every turn ("brain stalled");
+# size the wait from the actual prompt instead.
+LOCAL_LLM_PREFILL_TPS = 65.0
+LOCAL_LLM_MIN_TURN_SEC = int(_llm_env("HERMES_DESK_MIN_TURN", "HERMES_DESK_VLLM_MIN_TURN", "180"))
+LOCAL_LLM_MAX_TURN_SEC = int(_llm_env("HERMES_DESK_MAX_TURN", "HERMES_DESK_VLLM_MAX_TURN", "900"))
+
+
+def _local_llm_turn_timeout(payload: dict[str, Any] | None) -> int:
+    """Wall-clock budget for one direct llama call: prompt-size prefill + decode."""
+    chars = 0
+    for m in (payload or {}).get("messages") or []:
+        c = m.get("content") if isinstance(m, dict) else None
+        if isinstance(c, str):
+            chars += len(c)
+    try:
+        chars += len(json.dumps((payload or {}).get("tools") or []))
+    except Exception:
+        pass
+    est_tokens = chars // 4
+    prefill_sec = (est_tokens / LOCAL_LLM_PREFILL_TPS) * 1.35  # 35% headroom
+    budget = int(prefill_sec) + LOCAL_LLM_MAX_COMPLETION // 65  # + worst-case decode at 65 tok/s
+    return max(LOCAL_LLM_MIN_TURN_SEC, min(LOCAL_LLM_MAX_TURN_SEC, budget))
 # Hermes Agent ACP prompts carry ~16k tokens of tool schemas. The MiniOS 1536
 # prefill dropped tool results and the local model called the same tools again.
 LOCAL_LLM_CODING_PREFILL = int(_llm_env("HERMES_DESK_CODING_PREFILL", "HERMES_DESK_VLLM_CODING_PREFILL", "24576"))
@@ -7188,7 +7212,10 @@ def _teela_minios_complete(payload: dict[str, Any]) -> dict[str, Any] | None:
     )
     try:
         with hybrid_exclusive("think"):
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            # Prefill-bound: a ~10k executive prompt needs ~2.5 min before the
+            # first token on this engine (LOCAL_LLM_PREFILL_TPS). Fixed 120s
+            # timed out every turn ("brain stalled").
+            with urllib.request.urlopen(req, timeout=_local_llm_turn_timeout(payload)) as resp:
                 return json.loads(resp.read().decode() or "{}")
     except Exception as e:
         print(f"[deskd] MiniOS loop llama failed: {e}", flush=True)

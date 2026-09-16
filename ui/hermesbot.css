@@ -595,6 +595,33 @@ button { color:inherit; }
   border-left:2px solid color-mix(in srgb, #4aa3ff, transparent 55%);
 }
 .gb-progress:empty { display:none; }
+/* Live in-chat status line: mirrors the header status (Working…, Thinking…,
+   Starting…, Waiting for you…) so the user sees it in the conversation. */
+.chat-status-line {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  max-width:min(92%, 780px);
+  margin:4px 0 8px;
+  padding:5px 12px;
+  font:12.5px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color:var(--muted);
+  background:color-mix(in srgb, var(--accent,#4aa3ff), transparent 92%);
+  border-left:2px solid color-mix(in srgb, var(--accent,#4aa3ff), transparent 55%);
+  border-radius:8px;
+  animation:chatStatusPulse 1.8s ease-in-out infinite;
+}
+.chat-status-line::before {
+  content:"";
+  flex:0 0 auto;
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:var(--accent,#4aa3ff);
+  animation:chatStatusDot 1.2s ease-in-out infinite;
+}
+@keyframes chatStatusPulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+@keyframes chatStatusDot { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(.5);opacity:.35} }
 .gb-todo { --gb-accent:#4aa3ff; }
 .gb-todo.is-running { --gb-accent:#e6a817; }
 .todo-row { display:flex; gap:8px; padding:1px 0; white-space:normal; }
