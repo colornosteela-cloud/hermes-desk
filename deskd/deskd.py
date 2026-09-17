@@ -14219,21 +14219,62 @@ class Bot:
                 self.messages[-1]["t1"] = time.time()
             closed = {k: v for k, v in self.messages[-1].items() if k != "open"}
             self.append_log({"type": "chat", "message": closed})
+        self._compact_thought_messages()
         self.persist_messages()
+
+    def _compact_thought_messages(self) -> None:
+        """Keep one thought block per stretch; drop leftover reasoning after the reply."""
+        rows = list(self.messages or [])
+        last_asst = -1
+        for i, m in enumerate(rows):
+            if m.get("role") == "assistant":
+                last_asst = i
+        if last_asst >= 0:
+            rows = [m for i, m in enumerate(rows) if not (i > last_asst and m.get("role") == "thought")]
+        out: list[dict[str, Any]] = []
+        for m in rows:
+            prev = out[-1] if out else None
+            if (
+                m.get("role") == "thought"
+                and prev is not None
+                and prev.get("role") == "thought"
+            ):
+                a = str(prev.get("text") or "")
+                b = str(m.get("text") or "")
+                if (not b) or a == b or a.startswith(b) or b.startswith(a):
+                    if len(b) > len(a):
+                        prev["text"] = b
+                    if m.get("open"):
+                        prev["open"] = True
+                    if m.get("t1"):
+                        prev["t1"] = m.get("t1")
+                    continue
+            out.append(m)
+        self.messages = out
 
     def append_thought(self, text: str) -> None:
         incoming = text or ""
         if not incoming:
             return
-        if self.messages and self.messages[-1].get("role") == "thought" and self.messages[-1].get("open"):
-            cur = str(self.messages[-1].get("text") or "")
-            self.messages[-1]["text"] = merge_assistant_stream(cur, incoming)
-            self.messages[-1]["t1"] = time.time()
+        msgs = self.messages
+        for m in reversed(msgs):
+            role = m.get("role")
+            if role == "progress":
+                continue
+            # ACP can emit leftover reasoning after the spoken reply.
+            if role == "assistant" and not m.get("open"):
+                return
+            break
+        if msgs and msgs[-1].get("role") == "thought":
+            cur = str(msgs[-1].get("text") or "")
+            msgs[-1]["text"] = merge_assistant_stream(cur, incoming)
+            msgs[-1]["t1"] = time.time()
+            msgs[-1]["open"] = True
             return
-        if self.messages and self.messages[-1].get("open"):
-            self.messages[-1]["open"] = False
+        if msgs and msgs[-1].get("open"):
+            msgs[-1]["open"] = False
         now = time.time()
-        self.messages.append({"role": "thought", "text": incoming, "open": True, "ts": now, "t0": now, "t1": now})
+        msgs.append({"role": "thought", "text": incoming, "open": True, "ts": now, "t0": now, "t1": now})
 
     def upsert_tool(self, update: dict[str, Any]) -> None:
         tid = str(update.get("toolCallId") or "")

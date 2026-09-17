@@ -1174,6 +1174,38 @@ function lastProgressIndex(b) {
   return -1;
 }
 
+function thoughtTextOverlaps(a, b) {
+  const x = String(a || "");
+  const y = String(b || "");
+  if (!x || !y) return !y;
+  return x === y || x.startsWith(y) || y.startsWith(x) || (y.length >= 32 && x.includes(y)) || (x.length >= 32 && y.includes(x));
+}
+
+function collapseDuplicateThoughts(ms) {
+  const out = [];
+  for (const m of ms || []) {
+    const prev = out[out.length - 1];
+    if (m?.role === "thought" && prev?.role === "thought" && thoughtTextOverlaps(prev.text, m.text)) {
+      if (String(m.text || "").length > String(prev.text || "").length) prev.text = m.text;
+      if (m.open) prev.open = true;
+      if (m.t1) prev.t1 = m.t1;
+      continue;
+    }
+    out.push(m);
+  }
+  return out;
+}
+
+function pruneThoughtsAfterReply(ms) {
+  const rows = ms || [];
+  let lastAsst = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i]?.role === "assistant") lastAsst = i;
+  }
+  if (lastAsst < 0) return rows;
+  return rows.filter((m, i) => !(i > lastAsst && m?.role === "thought"));
+}
+
 function applySessionTurn(b, u) {
   const kind = u.sessionUpdate;
   const text = u.content?.text || "";
@@ -1189,14 +1221,23 @@ function applySessionTurn(b, u) {
     return true;
   }
   if (kind === "agent_thought_chunk" && text) {
-    const last = b.messages[b.messages.length - 1];
-    if (last && last.role === "thought" && last.open) {
+    const rows = b.messages;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const role = rows[i].role;
+      if (role === "progress") continue;
+      // ACP often emits leftover reasoning after the spoken reply.
+      if (role === "assistant" && !rows[i].open) return true;
+      break;
+    }
+    const last = rows[rows.length - 1];
+    if (last && last.role === "thought") {
       last.text = mergeAssistantStream(last.text || "", text);
       last.t1 = Date.now() / 1000;
+      last.open = true;
     } else {
       if (last && last.open) last.open = false;
       const now = Date.now() / 1000;
-      b.messages.push({ role: "thought", text, open: true, ts: now, t0: now, t1: now });
+      rows.push({ role: "thought", text, open: true, ts: now, t0: now, t1: now });
     }
     window.DeskUI?.setEmotion(b.id, "thinking", { persist: false, pop: false });
     return true;
@@ -1869,8 +1910,6 @@ function renderConversation(b) {
       return;
     }
     if (m.role === "thought") {
-      t.appendChild(renderThoughtBlock(m, idx));
-      if (m.elapsed_ms && msgs[idx + 1]?.role === "user") t.appendChild(renderWorked(m.elapsed_ms));
       return;
     }
     if (m.role === "tool") {
@@ -7674,15 +7713,16 @@ function applyLiveBotProfile(b, profile) {
     count: (b.messages || []).length,
   });
   const currentMessages = b.messages || [];
-  const liveRoles = new Set(["progress", "thought", "tool"]);
-  const currentPersisted = currentMessages.filter((m) => !liveRoles.has(m.role));
-  const transient = currentMessages.filter((m) => liveRoles.has(m.role));
+  const progress = currentMessages.filter((m) => m.role === "progress");
   Object.assign(b, profile);
   const serverMessages = Array.isArray(profile.messages) ? profile.messages : null;
-  if (serverMessages && serverMessages.length >= currentPersisted.length) {
-    b.messages = serverMessages.concat(transient);
+  if (serverMessages) {
+    // Thoughts/tools are already on the server profile. Concatenating the
+    // client's live copies duplicated "Thought" blocks on every poll and
+    // kept the transcript scrolling.
+    b.messages = pruneThoughtsAfterReply(collapseDuplicateThoughts(serverMessages.concat(progress)));
   } else {
-    b.messages = currentMessages;
+    b.messages = pruneThoughtsAfterReply(collapseDuplicateThoughts(currentMessages));
   }
   const after = JSON.stringify({
     status: b.status,

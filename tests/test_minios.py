@@ -1763,6 +1763,28 @@ applySessionTurn(b, { sessionUpdate: 'turn_completed', stop_reason: 'end_turn', 
 assert.ok(!b.messages.some((m) => m.role === 'progress'));
 ''')
 
+    def test_repeated_thoughts_are_collapsed_and_hidden(self) -> None:
+        self.assertIn("function collapseDuplicateThoughts", self.app)
+        self.assertIn("function pruneThoughtsAfterReply", self.app)
+        self.assertIn('if (m.role === "thought") {\n      return;', self.app)
+        self.assertIn("serverMessages.concat(progress)", self.app)
+        self.assertNotIn("serverMessages.concat(transient)", self.app)
+        self.run_frontend_node(r'''
+load('function thoughtTextOverlaps(', 'function applySessionTurn(');
+const same = {role:'thought', text:'I am Teela'};
+const dupes = [
+  {role:'user', text:'hi'},
+  same, {...same},
+  {role:'assistant', text:'Teela.'},
+  {role:'thought', text:'I am Teela'},
+];
+const collapsed = collapseDuplicateThoughts(dupes);
+assert.equal(collapsed.filter(m => m.role === 'thought').length, 2);
+const pruned = pruneThoughtsAfterReply(collapsed);
+assert.equal(pruned.filter(m => m.role === 'thought').length, 1);
+assert.equal(pruned.at(-1).role, 'assistant');
+''')
+
     def test_pasted_chat_images_are_not_duplicated(self) -> None:
         self.assertIn("function mergeChatImages", self.app)
         self.assertIn("optimisticPaste", self.app)
