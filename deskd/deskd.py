@@ -7368,6 +7368,19 @@ def _teela_minios_continue(
             payload["tool_choice"] = "none"
         t0 = time.perf_counter()
         started_ms = time.time() * 1000.0
+        # Teela's local executive call is synchronous (unlike ACP), so publish
+        # the phase explicitly. The UI renders this as a live in-chat progress
+        # line instead of leaving the user with only a top-level status.
+        emit(
+            {
+                "type": "session.update",
+                "bot_id": str(getattr(bot, "id", "") or ""),
+                "update": {
+                    "sessionUpdate": "agent_progress",
+                    "content": {"type": "text", "text": "Thinking…"},
+                },
+            }
+        )
         data = complete(payload)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         if isinstance(data, dict):
@@ -7436,11 +7449,54 @@ def _teela_minios_continue(
                         raise MiniOSClarify(ev)
                     result = {"ok": False, "error": "ask_user needs a question and at least two options"}
                 else:
+                    tool_id = str(call.get("id") or uuid.uuid4().hex[:12])
+                    tool_label = short.replace("_", " ").strip() or "tool"
+                    emit(
+                        {
+                            "type": "session.update",
+                            "bot_id": str(getattr(bot, "id", "") or ""),
+                            "update": {
+                                "sessionUpdate": "tool_call",
+                                "toolCallId": tool_id,
+                                "title": tool_label,
+                                "kind": "execute",
+                                "status": "running",
+                                "_meta": {
+                                    "x.ai/tool": {
+                                        "name": name,
+                                        "label": tool_label,
+                                        "input": args,
+                                    }
+                                },
+                            },
+                        }
+                    )
                     try:
                         result = execute_teela_allowed_tool(bot, name, args)
                     except Exception as e:
                         result = {"ok": False, "error": str(e)}
                     used.append(canonicalize_tool_name(name, None))
+                    emit(
+                        {
+                            "type": "session.update",
+                            "bot_id": str(getattr(bot, "id", "") or ""),
+                            "update": {
+                                "sessionUpdate": "tool_call_update",
+                                "toolCallId": tool_id,
+                                "title": tool_label,
+                                "kind": "execute",
+                                "status": "completed" if not isinstance(result, dict) or result.get("ok", True) else "failed",
+                                "content": {"text": json.dumps(result, default=str)[:4000]},
+                                "_meta": {
+                                    "x.ai/tool": {
+                                        "name": name,
+                                        "label": tool_label,
+                                        "input": args,
+                                    }
+                                },
+                            },
+                        }
+                    )
                 acted = True
                 payload["messages"].append(
                     {
@@ -19392,6 +19448,16 @@ class Handler(BaseHTTPRequestHandler):
         else:
             bot.append_msg("assistant", text)
             emit({"type": "chat", "bot_id": bot.id, "role": "assistant", "text": text})
+            emit(
+                {
+                    "type": "session.update",
+                    "bot_id": bot.id,
+                    "update": {
+                        "sessionUpdate": "turn_completed",
+                        "content": {"text": text},
+                    },
+                }
+            )
         try:
             started = getattr(bot, "_llama_started_ms", None)
             usage = getattr(bot, "_llama_usage", None)
