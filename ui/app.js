@@ -6420,6 +6420,7 @@ $("composer").addEventListener("submit", async (e) => {
     $("undo").disabled = false;
     b.can_undo = true;
   }
+  if (document.body) watchPromptProfile(state.selected);
   try {
     await api(`/v1/agent/${state.selected}/prompt`, {
       method: "POST",
@@ -6436,7 +6437,6 @@ $("composer").addEventListener("submit", async (e) => {
         })),
       }),
     });
-    if (document.body) watchPromptProfile(state.selected);
   } catch (err) {
     setWorking(state.selected, false);
     if (b) {
@@ -7705,6 +7705,9 @@ function applyLiveBotProfile(b, profile) {
 
 function watchPromptProfile(bid) {
   let ticks = 0;
+  let sawBusy = false;
+  const b0 = state.bots.find((x) => x.id === bid);
+  const baseline = (b0?.messages || []).filter((m) => !["progress", "thought", "tool"].includes(m.role)).length;
   const timer = setInterval(async () => {
     if (state.selected !== bid || ticks++ > 1200) {
       clearInterval(timer);
@@ -7714,8 +7717,16 @@ function watchPromptProfile(bid) {
       const profile = await api(`/v1/bots/${bid}`);
       const b = state.bots.find((x) => x.id === bid);
       if (!b || !profile) return;
+      const busy = /Thinking|Working|Speaking|Using /i.test(String(profile.status || ""));
+      if (busy) sawBusy = true;
       applyLiveBotProfile(b, profile);
-      if (!/Thinking|Working|Speaking|Using /i.test(String(profile.status || ""))) {
+      const serverMessages = Array.isArray(profile.messages) ? profile.messages : [];
+      const hasNewAssistant = serverMessages.length > baseline
+        && serverMessages.some((m, i) => i >= baseline && m.role === "assistant");
+      // Do not trust an early Ready snapshot: the worker can set Working just
+      // after the POST returns. Stop only after the new assistant message is
+      // visible, or after a genuinely observed busy turn has settled.
+      if (hasNewAssistant && (!busy || sawBusy)) {
         clearInterval(timer);
       }
     } catch {
