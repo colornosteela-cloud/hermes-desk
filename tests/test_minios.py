@@ -1517,6 +1517,8 @@ const check = deferred();
 globalThis.maybeConfirmSystemCheck = () => check.promise;
 elements.message.value = 'first';
 const first = submit();
+await new Promise(setImmediate);
+assert.equal(state.bots[0].messages.filter(m => m.role === 'user').length, 1, 'user bubble posts immediately');
 const duplicate = submit();
 check.resolve(false);
 await new Promise(setImmediate);

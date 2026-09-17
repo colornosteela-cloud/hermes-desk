@@ -6387,27 +6387,62 @@ $("composer").addEventListener("submit", async (e) => {
   // Claim submission synchronously so a second submit cannot pass that gap.
   if (state.composerSubmitting) return;
   state.composerSubmitting = true;
+  const images = state.pendingImages.slice();
+  const b0 = state.bots.find((x) => x.id === state.selected);
+  const b = b0;
+  let echoed = false;
+  const echoUser = () => {
+    if (echoed) return;
+    delete state.stopped[state.selected];
+    setWorking(state.selected, true);
+    $("message").value = "";
+    autosizeComposer();
+    state.pendingImages = [];
+    renderPasteTray();
+    window.DeskUI?.setEmotion(state.selected, "thinking", { persist: false, pop: true });
+    document.querySelector(".tps-stat")?.classList.add("generating");
+    $("tps-counter") && ($("tps-counter").textContent = "0.0");
+    if (b0) {
+      b0.tps = 0;
+      b0.speed_source = "";
+      b0.token_source = "";
+    }
+    if (b) {
+      b.messages = b.messages || [];
+      const pics = images.filter((i) => i.kind !== "video");
+      const clips = images.filter((i) => i.kind === "video");
+      // echoPending: the deskd prompt handler re-broadcasts this message.
+      // Keep it visible until the server snapshot includes it.
+      b.messages.push({
+        role: "user",
+        text: text || (pics.length ? "(image)" : "(attachment)"),
+        images: pics.map((i) => ({ path: null, preview: i.url || `data:${i.mime};base64,${i.data}` })),
+        attachments: clips.map((i) => ({ type: i.mime, url: i.url, name: i.name })),
+        echoPending: true,
+      });
+      chatStickBottom = true;
+      renderConversation(b);
+      $("undo").disabled = false;
+      b.can_undo = true;
+    }
+    echoed = true;
+  };
+  const undoEcho = () => {
+    if (!echoed) return;
+    if (b?.messages?.length) {
+      const last = b.messages[b.messages.length - 1];
+      if (last?.echoPending && last.role === "user") b.messages.pop();
+    }
+    $("message").value = text;
+    state.pendingImages = images.slice();
+    autosizeComposer();
+    renderPasteTray();
+    if (b) renderConversation(b);
+    setWorking(state.selected, false);
+    echoed = false;
+  };
   try {
   if (voiceChat.on) setWorking(state.selected, true);
-  if (skipCheckConfirm) skipCheckConfirm = false;
-  else if (!checkScopeToSend && !voiceChat.on && (await maybeConfirmSystemCheck(text))) return;
-  const confirmedScope = checkScopeToSend;
-  checkScopeToSend = "";
-  const b0 = state.bots.find((x) => x.id === state.selected);
-  if (b0 && !localEngineReady(b0)) {
-    const list = modelsForBot(b0);
-    const hit = list.find((x) => x.id === b0.model);
-    if (hit && isExclusiveVllmModel(hit) && isLocalOccupying(hit, list)) {
-      if (voiceChat.on) setWorking(state.selected, false);
-      return;
-    }
-    setWorking(state.selected, true);
-    await controlLocalLlm("start", b0.model, b0);
-    if (!localEngineReady(state.bots.find((x) => x.id === state.selected) || b0)) {
-      setWorking(state.selected, false);
-      return;
-    }
-  }
   if (text.startsWith("/") && b0 && botIsAgent(b0)) {
     const parsed = parseSlashLine(text);
     const row = parsed && !parsed.args && matchSlashCommand(slashCatalog(b0), parsed.cmdTok);
@@ -6424,40 +6459,33 @@ $("composer").addEventListener("submit", async (e) => {
     if (voiceChat.on) setWorking(state.selected, false);
     return;
   }
-  delete state.stopped[state.selected];
-  setWorking(state.selected, true);
-  const images = state.pendingImages.slice();
-  $("message").value = "";
-  autosizeComposer();
-  state.pendingImages = [];
-  renderPasteTray();
-  window.DeskUI?.setEmotion(state.selected, "thinking", { persist: false, pop: true });
-  document.querySelector(".tps-stat")?.classList.add("generating");
-  $("tps-counter") && ($("tps-counter").textContent = "0.0");
-  if (b0) {
-    b0.tps = 0;
-    b0.speed_source = "";
-    b0.token_source = "";
+  echoUser();
+  if (skipCheckConfirm) skipCheckConfirm = false;
+  else if (!checkScopeToSend && !voiceChat.on) {
+    try {
+      if (await maybeConfirmSystemCheck(text)) {
+        undoEcho();
+        return;
+      }
+    } catch (err) {
+      undoEcho();
+      throw err;
+    }
   }
-  const b = state.bots.find((x) => x.id === state.selected);
-  if (b) {
-    b.messages = b.messages || [];
-    const pics = images.filter((i) => i.kind !== "video");
-    const clips = images.filter((i) => i.kind === "video");
-    // echoPending: the deskd prompt handler re-broadcasts this message over WS
-    // (normalized via visible_user_text). The chat handler consumes that echo
-    // instead of appending a second bubble.
-    b.messages.push({
-      role: "user",
-      text: text || (pics.length ? "(image)" : "(attachment)"),
-      images: pics.map((i) => ({ path: null, preview: i.url || `data:${i.mime};base64,${i.data}` })),
-      attachments: clips.map((i) => ({ type: i.mime, url: i.url, name: i.name })),
-      echoPending: true,
-    });
-    chatStickBottom = true;
-    renderConversation(b);
-    $("undo").disabled = false;
-    b.can_undo = true;
+  const confirmedScope = checkScopeToSend;
+  checkScopeToSend = "";
+  if (b0 && !localEngineReady(b0)) {
+    const list = modelsForBot(b0);
+    const hit = list.find((x) => x.id === b0.model);
+    if (hit && isExclusiveVllmModel(hit) && isLocalOccupying(hit, list)) {
+      undoEcho();
+      return;
+    }
+    await controlLocalLlm("start", b0.model, b0);
+    if (!localEngineReady(state.bots.find((x) => x.id === state.selected) || b0)) {
+      undoEcho();
+      return;
+    }
   }
   if (document.body) watchPromptProfile(state.selected);
   try {
@@ -7714,16 +7742,17 @@ function applyLiveBotProfile(b, profile) {
   });
   const currentMessages = b.messages || [];
   const progress = currentMessages.filter((m) => m.role === "progress");
+  const pending = currentMessages.filter((m) => m.echoPending && m.role === "user");
   Object.assign(b, profile);
   const serverMessages = Array.isArray(profile.messages) ? profile.messages : null;
-  if (serverMessages) {
-    // Thoughts/tools are already on the server profile. Concatenating the
-    // client's live copies duplicated "Thought" blocks on every poll and
-    // kept the transcript scrolling.
-    b.messages = pruneThoughtsAfterReply(collapseDuplicateThoughts(serverMessages.concat(progress)));
-  } else {
-    b.messages = pruneThoughtsAfterReply(collapseDuplicateThoughts(currentMessages));
+  let next = serverMessages ? serverMessages.concat(progress) : currentMessages;
+  next = pruneThoughtsAfterReply(collapseDuplicateThoughts(next));
+  for (const p of pending) {
+    const text = visibleUserText(p.text);
+    const has = next.some((m) => m.role === "user" && visibleUserText(m.text) === text);
+    if (!has) next.push({ ...p });
   }
+  b.messages = next;
   const after = JSON.stringify({
     status: b.status,
     used: b.context_used,
@@ -7731,9 +7760,10 @@ function applyLiveBotProfile(b, profile) {
     count: (b.messages || []).length,
   });
   if (before === after) return false;
+  const pendingLeft = (b.messages || []).some((m) => m.echoPending);
   if (/Thinking|Working|Speaking|Using /i.test(String(b.status || ""))) {
     if (!state.stopped[b.id]) setWorking(b.id, true);
-  } else {
+  } else if (!pendingLeft) {
     setWorking(b.id, false);
   }
   renderRoster();
