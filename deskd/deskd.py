@@ -19524,28 +19524,6 @@ class Handler(BaseHTTPRequestHandler):
             said = visible_user_text(user_intent_text(turn_text))
             prior = prior_user_intent(bot)
             learn_from_user(bot, said, prior)
-            if bot_kind_is_teela(bot):
-                try:
-                    line = run_teela_executive_turn(bot, said or turn_text, images=images)
-                except MiniOSClarify:
-                    bot.status = "Waiting for you…"
-                    emit(
-                        {
-                            "type": "status",
-                            "bot_id": bot.id,
-                            "text": bot.status,
-                            "surface": bot.surface,
-                            "control": bot.control,
-                        }
-                    )
-                    return
-                if not line:
-                    line = "One second — my local brain stalled. Say that again?"
-                nxt = self._finish_fast_chat(bot, line)
-                if nxt:
-                    text, images = nxt
-                    continue
-                return
             turn_text = with_voice_note(turn_text, tui=True, bot=bot)
             wait_for_local_model(str(getattr(bot, "model", "") or ""), bot)
             if str(getattr(bot, "status", "") or "").startswith("Starting "):
