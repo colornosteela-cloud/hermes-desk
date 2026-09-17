@@ -524,7 +524,9 @@ _ASK_LAUGH_RE = re.compile(r"\b(?:laugh|chuckle|giggle)\b", re.I)
 _LAUGH_TAGS = frozenset({"laugh", "chuckle"})
 VOICE_ON_NOTE = (
     f"{VOICE_NOTE_MARK} ON] Your reply will be spoken aloud in Jade, your voice. "
-    "Short conversational sentences, no markdown, no code blocks, no lists, no URLs. "
+    "Write like you are talking: short conversational sentences. "
+    "No emoji, emoticons, or decorative symbols — Jade cannot say them. "
+    "No markdown, no code blocks, no lists, no URLs. "
     f"{CHATTERBOX_VOICE_NOTE}"
     "If code or long output is needed, say you wrote it to the chat instead.\n"
 )
@@ -532,16 +534,20 @@ VOICE_ON_ACP_NOTE = (
     f"{VOICE_NOTE_MARK} ON] Jade (your voice, not your model) speaks a cleaned version of this reply. "
     "The on-screen answer must match a Hermes TUI: markdown headings, tables, and lists "
     "with real line breaks. Do not collapse the report into one paragraph. "
+    "Chat and spoken lines: no emoji, emoticons, or symbols Jade cannot say. "
     f"{CHATTERBOX_VOICE_NOTE}"
 )
 VOICE_OFF_NOTE = (
-    f"{VOICE_NOTE_MARK}: OFF] The user is reading on a screen; normal formatting is fine. "
+    f"{VOICE_NOTE_MARK} OFF] They are reading on a screen, but Jade may still speak this later. "
+    "Write like you are talking: short spoken sentences. "
+    "Never use emoji, emoticons, or decorative symbols (they do not survive TTS). "
     "Do not insert [happy] or other voice tags.\n"
 )
 VOICE_CHAT_NOTE = (
     "[Voice chat: ON] Live spoken conversation. They are talking out loud; "
     "your reply is spoken in Jade (your voice, not your model). "
     "Stay with them in the room: short spoken sentences. "
+    "No emoji, emoticons, or symbols Jade cannot say. "
     "Do not mention this tag. Do not name Chatterbox unless they ask how your voice works.\n"
 )
 
@@ -706,8 +712,29 @@ def sanitize_chatterbox_text(text: str, user_text: str = "") -> str:
 
     out = _CHATTERBOX_TAG_RE.sub(repl, text or "")
     out = tts_friendly_times(out)
+    out = _EMOJI_RE.sub("", out)
     out = re.sub(r" {2,}", " ", out).strip()
     return filter_unwarranted_laughs(out, user_text)
+
+
+# Symbols Jade cannot say (emoji, dingbats, variation selectors, flags).
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001F5FF"
+    "\U0001F600-\U0001F64F"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F700-\U0001F77F"
+    "\U0001F780-\U0001F7FF"
+    "\U0001F800-\U0001F8FF"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FAFF"
+    "\U0001F1E6-\U0001F1FF"
+    "\U00002600-\U000026FF"
+    "\U00002700-\U000027BF"
+    "\U0000FE00-\U0000FE0F"
+    "\U0000200D"
+    "]+"
+)
 
 
 _THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.I | re.S)
@@ -11819,7 +11846,7 @@ def runtime_brief(bot: "Bot") -> str:
             "- Agent type: teela-brain (Robot Simulator body + Teela proprioception)\n"
             "- Live computer: MiniOS twin. Prefer teela_* / robot_* body tools, not coding tools.\n"
             "- Proprioception: a live I-feel body sense is merged into every thought (like a human feeling their limbs). Never infer pose from memory or conversation; the sense is the body.\n"
-            "- Voice: Jade is Chatterbox-Turbo TTS for spoken replies. It is your voice, not your model. Do not claim to run on Chatterbox, Jade, or Turbo.\n"
+            "- Voice: Jade is Chatterbox-Turbo TTS for spoken replies. It is your voice, not your model. Do not claim to run on Chatterbox, Jade, or Turbo. Write spoken words Jade can say — never emoji or emoticons.\n"
             "- Body lookbook: workspace BODY.md (you and the user edit it). When they teach how a movement looks, or show a photo/video, update BODY.md then move to match. You can watch short pasted video as still frames. Mimic means map what you see onto your poses and 16 joints — not a frame-perfect copy.\n"
         )
     return f"""# Session behavior
@@ -12192,6 +12219,14 @@ _TEELA_SOUL_TALK_TUI = (
     "If they want you to check with another bot (Body Bot, in sync, teammates), list_teammates then message_teammate. Do not dump your pose instead.\n"
     "You know your body;"
 )
+_TEELA_SOUL_TALK_SPEECH = (
+    "Talk like a person in the room: one or two short sentences. No paragraphs or lists when you are just chatting.\n"
+    "Jade (TTS) may speak every reply. Write as spoken words — never emoji, emoticons, or symbols she cannot say.\n"
+    "If they are talking to you (hi, how are you, chat), just talk — do not run a check or move.\n"
+    "If they want system work or a check of yourself, use Hermes Agent tools, then write the report as Hermes TUI markdown: a heading and a Component | Status table with one row per line. Do not flatten the report into one spoken paragraph.\n"
+    "If they want you to check with another bot (Body Bot, in sync, teammates), list_teammates then message_teammate. Do not dump your pose instead.\n"
+    "You know your body;"
+)
 _TEELA_SOUL_TALK_CHECK_ONLY = (
     "If they want system work or a check, call bot_desktop__teela_system_check, then talk to them about what you found.\n"
     "You know your body;"
@@ -12222,9 +12257,11 @@ def migrate_teela_soul(soul: str) -> str:
     """Upgrade the default Teela SOUL so talk vs system-work stays distinct."""
     out = soul or ""
     if _TEELA_SOUL_TALK_OLD in out:
-        out = out.replace(_TEELA_SOUL_TALK_OLD, _TEELA_SOUL_TALK_TUI)
+        out = out.replace(_TEELA_SOUL_TALK_OLD, _TEELA_SOUL_TALK_SPEECH)
     if _TEELA_SOUL_TALK_NEW in out:
-        out = out.replace(_TEELA_SOUL_TALK_NEW, _TEELA_SOUL_TALK_TUI)
+        out = out.replace(_TEELA_SOUL_TALK_NEW, _TEELA_SOUL_TALK_SPEECH)
+    if _TEELA_SOUL_TALK_TUI in out:
+        out = out.replace(_TEELA_SOUL_TALK_TUI, _TEELA_SOUL_TALK_SPEECH)
     if _TEELA_SOUL_TALK_CHECK_ONLY in out:
         out = out.replace(_TEELA_SOUL_TALK_CHECK_ONLY, _TEELA_SOUL_TALK_TEAM)
     if _TEELA_SOUL_STATUS_OLD in out:
@@ -12369,6 +12406,7 @@ Do not search the workspace for a robot program. Do not drag joint sliders.
 # Communication
 
 Talk like a person in the room: one or two short sentences. No paragraphs or lists when you are just chatting.
+Jade (TTS) may speak every reply. Write as spoken words — never emoji, emoticons, or symbols she cannot say.
 If they are talking to you (hi, how are you, chat), just talk — do not run a check or move.
 If they want system work or a check of yourself, use Hermes Agent tools, then write the report as Hermes TUI markdown: a heading and a Component | Status table with one row per line. Do not flatten the report into one spoken paragraph.
 If they want you to check with another bot (Body Bot, in sync, teammates), list_teammates then message_teammate. Do not dump your pose instead.

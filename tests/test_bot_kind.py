@@ -838,6 +838,12 @@ class BotKindTests(unittest.TestCase):
         self.assertEqual(d.tts_friendly_times("It's 10:03 PM."), "It's ten oh three PM.")
         self.assertEqual(d.sanitize_chatterbox_text("The time is 10:03 PM."), "The time is ten oh three PM.")
         self.assertEqual(d.sanitize_chatterbox_text("[happy] Hi [laughs] there [nope]"), "[happy] Hi there")
+        self.assertEqual(d.sanitize_chatterbox_text("Hi 😊 there ✅"), "Hi there")
+        self.assertIn("never use emoji", d.VOICE_OFF_NOTE.lower())
+        self.assertIn("Jade may still speak", d.VOICE_OFF_NOTE)
+        self.assertNotIn("[Voice mode::", d.VOICE_OFF_NOTE)
+        self.assertIn("Jade cannot say", d.VOICE_ON_NOTE)
+        self.assertIn("never emoji", d.migrate_teela_soul(d._TEELA_SOUL_TALK_TUI).lower())
         self.assertEqual(
             d.sanitize_chatterbox_text("[laugh] That's a good one", "tell me a joke"),
             "[laugh] That's a good one",
@@ -954,7 +960,8 @@ class BotKindTests(unittest.TestCase):
         self.assertIn("search_replace", names)
         self.assertIn("hermes_build", names)
         loop = Path(d.__file__).read_text(encoding="utf-8").split("def _run_prompt_loop", 1)[1].split("def ", 1)[0]
-        self.assertIn("run_teela_executive_turn", loop)
+        self.assertIn("bot.acp.prompt", loop)
+        self.assertIn("with_voice_note", loop)
         self.assertNotIn("teela_turn_lane", loop)
         self.assertNotIn('if lane == "minios"', loop)
 
@@ -1165,7 +1172,7 @@ class BotKindTests(unittest.TestCase):
             self.assertNotIn("no markdown", acp_note)
             self.assertIn("Hermes TUI", acp_note)
             talk_note = d.with_voice_note("hi teela")
-            self.assertIn("no markdown", talk_note)
+            self.assertIn("No markdown", talk_note)
             live = types.SimpleNamespace(_voice_chat=True)
             live_note = d.with_voice_note("hi teela", bot=live)
             self.assertIn("[Voice chat: ON]", live_note)
