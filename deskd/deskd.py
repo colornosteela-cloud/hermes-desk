@@ -13103,6 +13103,18 @@ class AcpClient:
         r"|connection (refused|reset)|timed?\s?out|out of memory",
         re.IGNORECASE,
     )
+    # Tool failures are already returned to the model as the tool result.
+    # "returned error" WARNING lines match \bError\b and were leaking into chat as ⚠.
+    _TOOL_RESULT_ERR_RE = re.compile(
+        r"agent\.tool_executor:\s+Tool\s+\S+\s+returned error",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def agent_stderr_to_chat(cls, line: str) -> bool:
+        if cls._TOOL_RESULT_ERR_RE.search(line or ""):
+            return False
+        return bool(cls._AGENT_ERR_RE.search(line or ""))
 
     def _read_stderr(self, gen: int) -> None:
         """Tail the agent child's stderr.
@@ -13131,7 +13143,7 @@ class AcpClient:
                     f.write(line + "\n")
             except OSError:
                 pass
-            if not self._AGENT_ERR_RE.search(line):
+            if not self.agent_stderr_to_chat(line):
                 continue
             short = re.sub(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\s*", "", line).strip()
             short = re.sub(r"^\[(INFO|DEBUG|WARNING)\]\s*", "", short)

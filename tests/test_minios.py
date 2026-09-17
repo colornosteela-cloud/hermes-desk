@@ -117,6 +117,16 @@ class MiniOSWorkspaceTests(unittest.TestCase):
             d.bots.pop(self.bot.id, None)
             d.bots.pop(other.id, None)
 
+    def test_tool_executor_warning_stays_out_of_chat(self) -> None:
+        line = (
+            "2026-09-16 23:10:00 [WARNING] agent.tool_executor: Tool tool_call returned error "
+            '(0.00s): {"error": "Local tools require one entry per tool_call; mixed and '
+            'multi-local batches are not supported."}'
+        )
+        self.assertFalse(d.AcpClient.agent_stderr_to_chat(line))
+        self.assertTrue(d.AcpClient.agent_stderr_to_chat("Traceback (most recent call last):"))
+        self.assertTrue(d.AcpClient.agent_stderr_to_chat("connection refused"))
+
     def test_prefill_progress_is_tui_line_not_thought(self) -> None:
         class _FakeBot:
             id = "b_gb"
