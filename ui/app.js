@@ -6301,6 +6301,9 @@ async function answerClarify(choice, label) {
 async function maybeConfirmSystemCheck(text) {
   const b = state.bots.find((x) => x.id === state.selected);
   if (!b || b.kind !== "teela-brain" || !text) return false;
+  if (!/\b(system check|diagnostics|check yourself|check the (?:main )?system|mesh health|host check)\b/i.test(text)) {
+    return false;
+  }
   try {
     const prev = await api(`/v1/bots/${b.id}/check-confirm`, {
       method: "POST",

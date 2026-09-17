@@ -175,6 +175,24 @@ class BotKindTests(unittest.TestCase):
         self.assertNotIn("desktop_run_tests", teela)
         self.assertNotIn("teela_system_check", hermes)
 
+    def test_teela_skips_tool_search_for_body(self) -> None:
+        md = d.agent_md_for_kind("teela-brain")
+        self.assertIn("Never tool_search", md)
+        self.assertIn("mcp__bot_desktop__robot_motion", md)
+        self.assertNotIn("never mcp__", md)
+        rules = str(d.acp_session_meta(_KindBot("teela-brain")).get("rules") or "")
+        self.assertIn("never tool_search", rules)
+        self.assertIn("cmd=plan", rules)
+        import agent_home as ah
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            ah.write_child_hermes_home(home, "qwen3.8-27b", {}, tool_search="off", max_turns=24)
+            cfg = (home / "config.yaml").read_text(encoding="utf-8")
+            self.assertIn("tool_search:", cfg)
+            self.assertIn("enabled: off", cfg)
+            self.assertIn("max_turns: 24", cfg)
+
     def test_profile_fields_follow_kind(self) -> None:
         hermes = types.SimpleNamespace(
             id="b1",

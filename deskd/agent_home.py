@@ -144,6 +144,8 @@ def write_child_hermes_home(
     *,
     reasoning_effort: str = "",
     permission_mode: str = "default",
+    tool_search: str = "",
+    max_turns: int = 150,
 ) -> None:
     """Regenerate the bot's config.yaml from the picker catalog.
 
@@ -180,12 +182,16 @@ def write_child_hermes_home(
         lines.append(f"  reasoning_effort: {effort}")
     lines += [
         f"  permission_mode: {mode}",
-        "  max_turns: 150",
+        f"  max_turns: {max(8, min(150, int(max_turns or 150)))}",
         "terminal:",
         "  backend: local",
         "compression:",
         "  enabled: true",
     ]
+    if str(tool_search or "").strip().lower() == "off":
+        # Hermes defers every MCP tool behind tool_search/tool_describe.
+        # Teela's body tools must stay model-visible or every wave costs two extra prefills.
+        lines += ["tool_search:", "  enabled: off"]
     # Named provider per picker row (except the default, already inline above)
     # so every selectable model round-trips through session/set_model.
     providers: list[tuple[str, dict[str, Any]]] = []
