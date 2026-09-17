@@ -6436,6 +6436,7 @@ $("composer").addEventListener("submit", async (e) => {
         })),
       }),
     });
+    if (document.body) watchPromptProfile(state.selected);
   } catch (err) {
     setWorking(state.selected, false);
     if (b) {
@@ -7664,6 +7665,65 @@ function connectEvents() {
 // page stops receiving chat replies. The server pings every ~30s when idle,
 // so if nothing (ping or real event) has arrived for EVENT_WATCHDOG_MS while
 // the socket still looks open, force a reconnect.
+function applyLiveBotProfile(b, profile) {
+  if (!b || !profile) return false;
+  const before = JSON.stringify({
+    status: b.status,
+    used: b.context_used,
+    tps: b.tps,
+    count: (b.messages || []).length,
+  });
+  const currentMessages = b.messages || [];
+  const liveRoles = new Set(["progress", "thought", "tool"]);
+  const currentPersisted = currentMessages.filter((m) => !liveRoles.has(m.role));
+  const transient = currentMessages.filter((m) => liveRoles.has(m.role));
+  Object.assign(b, profile);
+  const serverMessages = Array.isArray(profile.messages) ? profile.messages : null;
+  if (serverMessages && serverMessages.length >= currentPersisted.length) {
+    b.messages = serverMessages.concat(transient);
+  } else {
+    b.messages = currentMessages;
+  }
+  const after = JSON.stringify({
+    status: b.status,
+    used: b.context_used,
+    tps: b.tps,
+    count: (b.messages || []).length,
+  });
+  if (before === after) return false;
+  if (/Thinking|Working|Speaking|Using /i.test(String(b.status || ""))) {
+    if (!state.stopped[b.id]) setWorking(b.id, true);
+  } else {
+    setWorking(b.id, false);
+  }
+  renderRoster();
+  syncChatStatusLine(b);
+  renderMeta(b);
+  renderConversation(b);
+  return true;
+}
+
+function watchPromptProfile(bid) {
+  let ticks = 0;
+  const timer = setInterval(async () => {
+    if (state.selected !== bid || ticks++ > 1200) {
+      clearInterval(timer);
+      return;
+    }
+    try {
+      const profile = await api(`/v1/bots/${bid}`);
+      const b = state.bots.find((x) => x.id === bid);
+      if (!b || !profile) return;
+      applyLiveBotProfile(b, profile);
+      if (!/Thinking|Working|Speaking|Using /i.test(String(profile.status || ""))) {
+        clearInterval(timer);
+      }
+    } catch {
+      // Keep trying while the turn is active; SSE may be temporarily offline.
+    }
+  }, 700);
+}
+
 function startLiveBotPoller() {
   if (liveBotPoller) return;
   liveBotPoller = setInterval(async () => {
@@ -7672,41 +7732,7 @@ function startLiveBotPoller() {
     try {
       const profile = await api(`/v1/bots/${bid}`);
       const b = state.bots.find((x) => x.id === bid);
-      if (!b || !profile) return;
-      const before = JSON.stringify({
-        status: b.status,
-        used: b.context_used,
-        tps: b.tps,
-        count: (b.messages || []).length,
-      });
-      const currentMessages = b.messages || [];
-      const liveRoles = new Set(["progress", "thought", "tool"]);
-      const currentPersisted = currentMessages.filter((m) => !liveRoles.has(m.role));
-      const transient = currentMessages.filter((m) => liveRoles.has(m.role));
-      Object.assign(b, profile);
-      const serverMessages = Array.isArray(profile.messages) ? profile.messages : null;
-      if (serverMessages && serverMessages.length >= currentPersisted.length) {
-        b.messages = serverMessages.concat(transient);
-      } else {
-        b.messages = currentMessages;
-      }
-      const after = JSON.stringify({
-        status: b.status,
-        used: b.context_used,
-        tps: b.tps,
-        count: (b.messages || []).length,
-      });
-      if (before !== after) {
-        if (/Thinking|Working|Speaking|Using /i.test(String(b.status || ""))) {
-          if (!state.stopped[b.id]) setWorking(b.id, true);
-        } else {
-          setWorking(b.id, false);
-        }
-        renderRoster();
-        syncChatStatusLine(b);
-        renderMeta(b);
-        renderConversation(b);
-      }
+      applyLiveBotProfile(b, profile);
     } catch {
       // SSE remains the primary path; polling is only a silent-stream fallback.
     }
