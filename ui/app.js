@@ -7314,6 +7314,7 @@ let eventSource = null;
 let eventReconnectTimer = 0;
 let eventLastSeen = 0;      // Date.now() of the last SSE message (incl. pings)
 let eventWatchdog = 0;      // interval id for the dead-stream watchdog
+let liveBotPoller = 0;      // profile fallback for silent mobile SSE streams
 const EVENT_WATCHDOG_MS = 45000;   // pings arrive every ~30s when idle
 const EVENT_RECONNECT_AFTER_MS = 20000; // force-retry a dead stream sooner
 function connectEvents() {
@@ -7663,8 +7664,55 @@ function connectEvents() {
 // page stops receiving chat replies. The server pings every ~30s when idle,
 // so if nothing (ping or real event) has arrived for EVENT_WATCHDOG_MS while
 // the socket still looks open, force a reconnect.
+function startLiveBotPoller() {
+  if (liveBotPoller) return;
+  liveBotPoller = setInterval(async () => {
+    const bid = state.selected;
+    if (!bid) return;
+    try {
+      const profile = await api(`/v1/bots/${bid}`);
+      const b = state.bots.find((x) => x.id === bid);
+      if (!b || !profile) return;
+      const before = JSON.stringify({
+        status: b.status,
+        used: b.context_used,
+        tps: b.tps,
+        count: (b.messages || []).length,
+      });
+      const currentMessages = b.messages || [];
+      const liveRoles = new Set(["progress", "thought", "tool"]);
+      const currentPersisted = currentMessages.filter((m) => !liveRoles.has(m.role));
+      const transient = currentMessages.filter((m) => liveRoles.has(m.role));
+      Object.assign(b, profile);
+      const serverMessages = Array.isArray(profile.messages) ? profile.messages : null;
+      if (serverMessages && serverMessages.length >= currentPersisted.length) {
+        b.messages = serverMessages.concat(transient);
+      } else {
+        b.messages = currentMessages;
+      }
+      const after = JSON.stringify({
+        status: b.status,
+        used: b.context_used,
+        tps: b.tps,
+        count: (b.messages || []).length,
+      });
+      if (before !== after) {
+        if (/Thinking|Working|Speaking|Using /i.test(String(b.status || ""))) {
+          if (!state.stopped[b.id]) setWorking(b.id, true);
+        } else {
+          setWorking(b.id, false);
+        }
+        renderRoster();
+        syncChatStatusLine(b);
+        renderMeta(b);
+        renderConversation(b);
+      }
+    } catch {
+      // SSE remains the primary path; polling is only a silent-stream fallback.
+    }
+  }, 1500);
+}
 function startEventWatchdog() {
-  if (eventWatchdog) return;
   eventWatchdog = setInterval(() => {
     if (!eventSource) return;
     const ready = eventSource.readyState; // 0 CONNECTING, 1 OPEN, 2 CLOSED
@@ -7731,6 +7779,7 @@ function startEventWatchdog() {
   bindChatTranscript();
   renderChatTimeline();
   connectEvents();
+  startLiveBotPoller();
   loopBrowser();
   window.DeskUI?.renderHourlyNotes();
   $("editor-save")?.addEventListener("click", saveEditorFile);
