@@ -95,6 +95,7 @@ class BotKindTests(unittest.TestCase):
         self.assertNotIn("MiniOS desktop", hermes)
         self.assertIn("Teela", teela)
         self.assertIn("You have a body", teela)
+        self.assertIn("Trusted Embedded Embodied Learning Agent", teela)
 
     def test_strip_body_tools(self) -> None:
         payload = {
@@ -874,9 +875,13 @@ class BotKindTests(unittest.TestCase):
         self.assertIn("clear throat", d.CHATTERBOX_TURBO_TAGS)
         self.assertIn("check with Body Bot", d.agent_md_for_kind("teela-brain"))
         self.assertIn("early twenties", d.agent_md_for_kind("teela-brain"))
+        self.assertIn("Trusted Embedded Embodied Learning Agent", d.DEFAULT_SOUL)
+        self.assertIn("Trusted Embedded Embodied Learning Agent", d.agent_md_for_kind("teela-brain"))
+        self.assertIn("Trusted Embedded Embodied Learning Agent", d.AGENT_MD)
         bare = "# Identity\n\nYou are Teela Bot.\n\n# Purpose\n\nhello\n"
         self.assertIn("# Personality", d.migrate_teela_soul(bare))
         self.assertIn("early twenties", d.migrate_teela_soul(bare))
+        self.assertIn("Trusted Embedded Embodied Learning Agent", d.migrate_teela_soul(bare))
 
     def test_teela_teammate_sync_not_pose(self) -> None:
         ask = "can you check with Body Bot and make sure you two are in sync"

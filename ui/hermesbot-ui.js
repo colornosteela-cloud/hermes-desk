@@ -1852,7 +1852,7 @@
       soul.placeholder =
         kind === "hermes"
           ? "Hermes Agent agent: same tools and answers as a Hermes TUI session. No robot body."
-          : "Teela Brain: feel the live body, then move the Robot Simulator. First person, short replies.";
+          : "Teela Brain (Trusted Embedded Embodied Learning Agent): feel the live body, then move the Robot Simulator. First person, short replies.";
     }
     if (note && !editing) {
       if (localTeelaBrainTaken()) {
